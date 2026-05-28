@@ -4,6 +4,7 @@ provider "google" {
   impersonate_service_account = "terraform-sa@${var.project}.iam.gserviceaccount.com"
 }
 
+# Flink Service Account
 resource "google_service_account" "flink_sa" {
   account_id   = var.service_account
   display_name = "Flink Service Account"
@@ -39,8 +40,3 @@ resource "local_file" "kafka_connect_key_key_json" {
   content  = base64decode(google_service_account_key.kafka_connect_key.private_key)
   filename = "${path.module}/../local_scripts/streaming/secrets/kafka_connect_key.json"
 }
-
-
-
-
-

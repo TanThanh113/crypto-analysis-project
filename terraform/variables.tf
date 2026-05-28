@@ -70,3 +70,16 @@ variable "artifact_registry_repo_id" {
   type        = string
   default     = "crypto-docker"
 }
+
+#-- GitHub Actions Configuration --
+variable "github_owner" {
+  description = "GitHub owner or organization name."
+  type        = string
+  default     = "TanThanh113"
+}
+
+variable "github_repo" {
+  description = "GitHub repository name."
+  type        = string
+  default     = "crypto-analysis-project"
+}
