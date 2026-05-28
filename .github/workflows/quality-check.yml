@@ -1,0 +1,105 @@
+name: Quality Check
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  quality-check:
+    name: Repository quality checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Basic secret scan
+        run: |
+          set -e
+          if git grep -nE 'BEGIN PRIVATE KEY|AIza[0-9A-Za-z_-]{20,}|ghp_[0-9A-Za-z_]{20,}|sk-[0-9A-Za-z]{20,}|xox[baprs]-[0-9A-Za-z-]{20,}' -- . ':!.github/workflows/quality-check.yml'; then
+            echo "Potential secret detected."
+            exit 1
+          fi
+          echo "No obvious secrets detected."
+
+      - name: Check forbidden committed files
+        run: |
+          set -e
+          if git ls-files | grep -Ei '\.env|tfstate|tfvars|secret|secrets|key\.json|credential|credentials|joblib|artifacts|output_data|_state|\.success|\.parquet'; then
+            echo "Forbidden file pattern detected in git-tracked files."
+            exit 1
+          fi
+          echo "No forbidden files detected."
+
+      - name: Validate Kestra YAML syntax
+        run: |
+          python - <<'PY'
+          import pathlib
+          import sys
+          import yaml
+
+          paths = list(pathlib.Path("kestra/flows").rglob("*.yml")) + list(pathlib.Path("kestra/flows").rglob("*.yaml"))
+          if not paths:
+              print("No Kestra YAML files found.")
+              sys.exit(0)
+
+          failed = False
+          for path in paths:
+              try:
+                  with path.open("r", encoding="utf-8") as f:
+                      yaml.safe_load(f)
+                  print(f"OK: {path}")
+              except Exception as exc:
+                  failed = True
+                  print(f"ERROR: {path}: {exc}")
+
+          if failed:
+              sys.exit(1)
+          PY
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform fmt check
+        run: |
+          terraform -chdir=terraform fmt -check -recursive
+
+      - name: Terraform init
+        run: |
+          terraform -chdir=terraform init -backend=false
+
+      - name: Terraform validate
+        run: |
+          terraform -chdir=terraform validate
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: dbt parse
+        working-directory: dbt_transform
+        env:
+          GCP_PROJECT_ID: project-lambda-crypto
+          BQ_ANALYTICS_DATASET: dbt_quants_dev
+          BQ_ML_OUTPUTS_DATASET: ml_outputs
+          BQ_LOCATION: asia-southeast1
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/nonexistent-gcp-key.json
+        run: |
+          uv sync --locked
+          cd crypto_dbt
+          uv run dbt deps
+          uv run dbt parse --no-partial-parse
+
+      - name: Python syntax check - batch
+        working-directory: local_scripts
+        run: |
+          python -m compileall batch
+
+      - name: Python syntax check - ml
+        working-directory: ml
+        run: |
+          python -m compileall train_model.py predict_latest.py
