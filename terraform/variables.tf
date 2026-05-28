@@ -53,6 +53,7 @@ variable "service_account" {
   description = "The Service Account used for Terraform"
 }
 
+# --- BigLake Configuration ---
 variable "user_email" {
   type        = string
   description = "The email address of the user used for impersonation"
@@ -61,4 +62,11 @@ variable "user_email" {
 variable "catalog_name" {
   type        = string
   description = "The name of the Iceberg Catalog used for the crypto project"
+}
+
+# --- Artifact Registry Configuration ---
+variable "artifact_registry_repo_id" {
+  description = "Artifact Registry Docker repository ID for crypto analytics images."
+  type        = string
+  default     = "crypto-docker"
 }

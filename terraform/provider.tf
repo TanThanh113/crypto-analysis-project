@@ -1,6 +1,6 @@
 provider "google" {
-  project = var.project
-  region  = var.region
+  project                     = var.project
+  region                      = var.region
   impersonate_service_account = "terraform-sa@${var.project}.iam.gserviceaccount.com"
 }
 

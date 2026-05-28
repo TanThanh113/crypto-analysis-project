@@ -33,7 +33,7 @@ resource "google_storage_bucket_object" "upload_jars" {
 
 resource "google_storage_bucket_object" "upload_python_dynamic" {
   for_each = fileset("${path.module}/../local_scripts/streaming/logic_crypto_streaming", "**/*")
-  
+
   name   = "scripts/${each.value}"
   source = "${path.module}/../local_scripts/streaming/logic_crypto_streaming/${each.value}"
   bucket = google_storage_bucket.crypto_bucket.name

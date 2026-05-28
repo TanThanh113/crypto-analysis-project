@@ -10,7 +10,7 @@ resource "google_compute_subnetwork" "crypto_subnet" {
   ip_cidr_range            = "10.0.1.0/24"
   region                   = var.region
   network                  = google_compute_network.crypto_vpc.id
-  private_ip_google_access = true 
+  private_ip_google_access = true
 }
 
 # Create a Router Cloud NAT
