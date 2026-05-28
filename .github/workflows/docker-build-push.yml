@@ -1,0 +1,96 @@
+name: Build and Push Docker Images
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "local_scripts/**"
+      - "dbt_transform/**"
+      - "ml/**"
+      - "docker/**"
+      - ".github/workflows/docker-build-push.yml"
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: project-lambda-crypto
+  REGION: asia-southeast1
+  ARTIFACT_REPO: crypto-docker
+  IMAGE_BASE: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker
+
+jobs:
+  build-and-push:
+    name: Build and push Docker images
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_CICD_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+
+      - name: Build batch image
+        run: |
+          docker build \
+            -t ${IMAGE_BASE}/crypto-batch:${{ github.sha }} \
+            -t ${IMAGE_BASE}/crypto-batch:latest \
+            -f docker/batch.Dockerfile \
+            local_scripts
+
+      - name: Build dbt image
+        run: |
+          docker build \
+            -t ${IMAGE_BASE}/crypto-dbt:${{ github.sha }} \
+            -t ${IMAGE_BASE}/crypto-dbt:latest \
+            -f docker/dbt.Dockerfile \
+            dbt_transform
+
+      - name: Build ML image
+        run: |
+          docker build \
+            -t ${IMAGE_BASE}/crypto-ml:${{ github.sha }} \
+            -t ${IMAGE_BASE}/crypto-ml:latest \
+            -f docker/ml.Dockerfile \
+            ml
+
+      - name: Smoke test batch image
+        run: |
+          docker run --rm ${IMAGE_BASE}/crypto-batch:${{ github.sha }} python --version
+
+      - name: Smoke test dbt image
+        run: |
+          docker run --rm ${IMAGE_BASE}/crypto-dbt:${{ github.sha }} uv run dbt --version
+
+      - name: Smoke test ML image
+        run: |
+          docker run --rm ${IMAGE_BASE}/crypto-ml:${{ github.sha }} python --version
+
+      - name: Push batch image
+        run: |
+          docker push ${IMAGE_BASE}/crypto-batch:${{ github.sha }}
+          docker push ${IMAGE_BASE}/crypto-batch:latest
+
+      - name: Push dbt image
+        run: |
+          docker push ${IMAGE_BASE}/crypto-dbt:${{ github.sha }}
+          docker push ${IMAGE_BASE}/crypto-dbt:latest
+
+      - name: Push ML image
+        run: |
+          docker push ${IMAGE_BASE}/crypto-ml:${{ github.sha }}
+          docker push ${IMAGE_BASE}/crypto-ml:latest
