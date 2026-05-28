@@ -1,0 +1,124 @@
+# Crypto ML feature contract v1
+# This file is intentionally explicit to prevent data leakage.
+# train_model.py and predict_latest.py must use the same feature list.
+
+# Settings for BigQuery
+bigquery:
+  project_id_env: GCP_PROJECT_ID
+  analytics_dataset_env: BQ_ANALYTICS_DATASET # dataset for analytics tables
+  ml_outputs_dataset_env: BQ_ML_OUTPUTS_DATASET # dataset for ml outputs tables
+
+  # Default values for BigQuery tables
+  default_analytics_dataset: dbt_quants_dev
+  default_ml_outputs_dataset: ml_outputs
+
+  # Tables needed for training
+  training_table: mart_ml_training_dataset_hourly # table with training data
+  prediction_input_table: mart_ml_prediction_input_latest # table to retrieve the latest data row
+  metrics_table: model_metrics # table to store metrics
+  predictions_table: model_predictions # table to store predictions
+
+# Settings for model training
+model:
+  model_name: crypto_direction_lgbm_v1 # model name
+  model_version: v1 # model version
+  model_family: crypto_direction
+  algorithm: lightgbm # algorithm used for training
+  target_name: future_direction_4h # target column name
+  split_column: split_name
+  sample_weight_column: sample_weight_4h
+  primary_metric: f1_macro # primary metric used for model evaluation
+  random_state: 42
+
+  # The model categorizes prices into three directions: 
+  # UP (Price increases), DOWN (Price decreases), or FLAT (Price remains stable).
+  valid_classes:
+    - UP
+    - DOWN
+    - FLAT
+
+  # The predicted percentage for each will be recorded here.
+  class_probability_mapping:
+    UP: prob_up
+    DOWN: prob_down
+    FLAT: prob_flat
+
+  # Features that are categorical.
+  categorical_features:
+    - symbol
+
+  numeric_features:
+    # Market / price action - coverage 99.9% to 100%
+    - return_1h
+    - return_4h
+    - return_24h
+    - log_return_1h
+    - realized_volatility_24h
+    - rolling_avg_return_7h
+    - rolling_avg_return_24h
+    - rolling_volatility_24h
+    - rolling_volatility_7d
+    - quote_volume
+    - quote_volume_24h
+    - volume_zscore_24h
+    - taker_buy_quote_ratio
+
+    # Funding / basis / derivatives - coverage 100%
+    - avg_basis_pct
+    - max_abs_basis_pct
+    - avg_funding_rate_coin
+    - avg_funding_rate_usdt
+    - avg_annualized_funding_coin
+    - avg_annualized_funding_usdt
+    - avg_arbitrage_spread
+    - max_leverage_stress
+    - avg_leverage_stress
+
+    # Macro market context - coverage ~99.8%
+    - sp500_return_1d
+    - nasdaq_return_1d
+    - gold_return_1d
+    - vix_return_1d
+    - oil_return_1d
+    - nasdaq_sp500_ratio
+    - safe_haven_bid_1d
+
+    # Core engineered scores - coverage 100%
+    - market_momentum_score
+    - social_sentiment_score
+    - derivatives_risk_score
+    - liquidity_risk_score
+    - macro_risk_score
+    - overall_risk_score
+
+    # Risk / momentum deltas - coverage ~99.95%
+    - market_momentum_delta_24h
+    - overall_risk_delta_24h
+    - rolling_avg_overall_risk_24h
+
+# Training Regulations
+training:
+  min_total_rows: 200
+  min_rows_per_split: 20
+  min_classes_per_split: 2
+  fill_numeric_null_with: 0 # If a numeric feature is null, fill it with this value.
+  fill_categorical_null_with: UNKNOWN # If a categorical feature is null, fill it with this value.
+  drop_rows_with_null_target: true # Drop rows with null target.
+
+# Prediction Regulations
+prediction:
+# When running real-world predictions, at least 50% of the features must be functioning normally; 
+# if this level falls below, the model will reject the prediction to avoid errors.
+  min_feature_completeness_score: 0.50
+
+  # The system defines a signal as strong (High confidence) when the certainty is above 80%, and average when it is above 60%.
+  output_signal_rules:
+    high_confidence_threshold: 80
+    medium_confidence_threshold: 60
+
+# Product storage
+artifact:
+  storage_mode: gcs
+  gcs_bucket_env: GCP_BUCKET_NAME
+  gcs_prefix: ml-artifacts/crypto_direction_lgbm_v1
+  latest_manifest_name: latest_model.json

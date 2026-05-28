@@ -1,0 +1,481 @@
+version: 2
+
+models:
+  - name: int_market_trades_hourly
+    description: >
+      Hourly OHLCV, volume, taker pressure, return and rolling market
+      microstructure features from Binance historical trades. Grain:
+      one row per hour_ts and symbol.
+    columns:
+      - name: hour_ts
+        description: "Hourly timestamp bucket for the market features."
+        tests:
+          - not_null
+
+      - name: symbol
+        description: "Base crypto asset symbol, for example BTC or ETH."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['BTC', 'ETH']
+
+      - name: close_price
+        description: "Last traded price in the hour."
+        tests:
+          - not_null
+
+      - name: quote_volume
+        description: "Total quoted trading volume in the hour."
+        tests:
+          - not_null
+
+      - name: return_1h
+        description: "One-hour simple return based on hourly close price."
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - hour_ts
+            - symbol
+
+
+  - name: int_funding_hourly
+    description: >
+      Hourly funding, basis, arbitrage and leverage-stress features across
+      Binance, Bybit and OKX. Grain: one row per hour_ts and symbol.
+    columns:
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['BTC', 'ETH']
+
+      - name: exchanges_reporting
+        description: "Number of exchanges reporting funding data in the hour."
+
+      - name: avg_annualized_funding_coin
+        description: "Average annualized COIN-M funding rate across exchanges."
+
+      - name: avg_arbitrage_spread
+        description: "Average arbitrage spread between COIN-M and USDT-M funding."
+
+      - name: dominant_funding_regime
+        description: "Funding regime from the exchange with the strongest funding signal."
+
+      - name: dominant_arbitrage_opportunity
+        description: "Dominant arbitrage opportunity based on strongest arbitrage spread."
+        tests:
+          - accepted_values:
+              values: ['FAVOR_USDT_M', 'FAVOR_COIN_M', 'BALANCED']
+              config:
+                severity: warn
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - hour_ts
+            - symbol
+
+
+  - name: int_liquidation_bucket_hourly
+    description: >
+      Hourly liquidation heatmap features at price-bucket level. Grain:
+      one row per hour_ts, symbol and price_bucket_key.
+    columns:
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['BTC', 'ETH']
+
+      - name: price_bucket
+        description: "Liquidation price bucket."
+        tests:
+          - not_null
+
+      - name: price_bucket_key
+        description: "String key for the price bucket, used for stable merge keys."
+        tests:
+          - not_null
+
+      - name: total_liq_usd_bucket
+        description: "Total liquidation USD value in this price bucket."
+
+      - name: rank_score
+        description: "Bucket ranking score based on magnet, panic and liquidation features."
+
+      - name: squeeze_signal
+        description: "Detected squeeze setup for this bucket."
+        tests:
+          - accepted_values:
+              values: ['SHORT_SQUEEZE_SETUP', 'LONG_SQUEEZE_SETUP', 'NEUTRAL']
+              config:
+                severity: warn
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - hour_ts
+            - symbol
+            - price_bucket_key
+
+
+  - name: int_liquidation_hourly
+    description: >
+      Hourly liquidation risk summary by symbol. Aggregates all liquidation
+      price buckets into one symbol-hour feature row.
+    columns:
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['BTC', 'ETH']
+
+      - name: total_liq_usd
+        description: "Total liquidation USD value across all buckets."
+
+      - name: net_long_short_liq_ratio
+        description: "Net long-short liquidation imbalance ratio."
+
+      - name: top_liq_price_bucket
+        description: "Price bucket with the highest liquidation rank score."
+
+      - name: top_squeeze_signal
+        description: "Squeeze signal from the highest ranked liquidation bucket."
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - hour_ts
+            - symbol
+
+
+  - name: int_options_hourly
+    description: >
+      Hourly Deribit options volatility, skew, open interest, volume and Greeks
+      exposure proxies by underlying. Grain: one row per hour_ts and symbol.
+    columns:
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['BTC', 'ETH']
+
+      - name: option_instrument_count
+        description: "Number of option instruments observed in the hour."
+
+      - name: avg_mark_iv
+        description: "Average mark implied volatility."
+
+      - name: oi_weighted_mark_iv
+        description: "Open-interest-weighted mark implied volatility."
+
+      - name: put_call_oi_ratio
+        description: "Put open interest divided by call open interest."
+
+      - name: gamma_exposure_proxy
+        description: "Proxy for aggregate gamma exposure."
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - hour_ts
+            - symbol
+
+
+  - name: int_reddit_sentiment_hourly
+    description: >
+      Hourly Reddit sentiment, engagement and event-tag features by asset.
+      Grain: one row per hour_ts and symbol.
+    columns:
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['BTC', 'ETH', 'GENERAL']
+
+      - name: reddit_post_count
+        description: "Number of Reddit posts in the hour."
+
+      - name: reddit_weighted_avg_sentiment
+        description: "Weighted average Reddit sentiment."
+
+      - name: top_reddit_title
+        description: "Highest engagement Reddit post title in the hour."
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - hour_ts
+            - symbol
+
+
+  - name: int_telegram_sentiment_hourly
+    description: >
+      Hourly Telegram sentiment, engagement, topic and importance features by
+      asset. BTC_ETH messages are expanded into both BTC and ETH rows.
+      Grain: one row per hour_ts and symbol.
+    columns:
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['BTC', 'ETH', 'GENERAL']
+
+      - name: telegram_message_count
+        description: "Number of Telegram messages in the hour."
+
+      - name: telegram_weighted_avg_sentiment
+        description: "Engagement-weighted Telegram sentiment."
+
+      - name: top_telegram_text
+        description: "Highest engagement Telegram message text."
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - hour_ts
+            - symbol
+
+
+  - name: int_social_sentiment_hourly
+    description: >
+      Combined Reddit and Telegram hourly sentiment features by symbol.
+      Used as the unified social feature table for downstream crypto features.
+      Grain: one row per hour_ts and symbol.
+    columns:
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['BTC', 'ETH', 'GENERAL']
+
+      - name: social_item_count
+        description: "Total Reddit posts plus Telegram messages."
+
+      - name: social_weighted_avg_sentiment
+        description: "Combined weighted average sentiment across Reddit and Telegram."
+
+      - name: social_signal_state
+        description: "Cross-source agreement or divergence state."
+        tests:
+          - accepted_values:
+              values:
+                - 'BULLISH_AGREEMENT'
+                - 'BEARISH_AGREEMENT'
+                - 'DIVERGENCE'
+                - 'TELEGRAM_ONLY'
+                - 'REDDIT_ONLY'
+                - 'NEUTRAL_OR_LOW_SIGNAL'
+              config:
+                severity: warn
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - hour_ts
+            - symbol
+
+
+  - name: int_stablecoin_hourly
+    description: >
+      Hourly market-level stablecoin liquidity, dominance and peg-risk features.
+      Grain: one row per hour_ts.
+    columns:
+      - name: hour_ts
+        tests:
+          - not_null
+          - unique
+
+      - name: total_stablecoin_market_cap_usd
+        description: "Total market cap across tracked stablecoins."
+
+      - name: stablecoin_volume_to_mcap
+        description: "Total stablecoin 24h volume divided by total stablecoin market cap."
+
+      - name: worst_peg_symbol
+        description: "Stablecoin with the largest absolute peg deviation."
+
+      - name: mcap_weighted_peg_deviation_pct
+        description: "Market-cap-weighted peg deviation percentage."
+
+
+  - name: int_stablecoin_daily
+    description: >
+      Daily latest stablecoin snapshot with day-over-day changes in market cap,
+      volume, dominance and depeg risk. Grain: one row per snapshot_date.
+    columns:
+      - name: snapshot_date
+        tests:
+          - not_null
+          - unique
+
+      - name: latest_hour_ts
+        tests:
+          - not_null
+
+      - name: stablecoin_mcap_return_1d
+        description: "One-day return of total stablecoin market cap."
+
+
+  - name: int_exchange_reserve_hourly
+    description: >
+      Hourly exchange reserve, utilization, concentration, trust and bank-run
+      risk features. Grain: one row per hour_ts.
+    columns:
+      - name: hour_ts
+        tests:
+          - not_null
+          - unique
+
+      - name: exchange_count
+        description: "Number of exchanges included in the hourly reserve snapshot."
+
+      - name: total_exchange_reserve_usd
+        description: "Total exchange reserve in USD."
+
+      - name: reserve_hhi
+        description: "Herfindahl-Hirschman Index measuring reserve concentration."
+
+      - name: top_reserve_exchange
+        description: "Exchange with the largest reserve."
+
+
+  - name: int_exchange_reserve_daily
+    description: >
+      Daily latest exchange reserve snapshot with day-over-day changes in reserve,
+      volume, utilization, concentration and bank-run risk. Grain: one row per
+      snapshot_date.
+    columns:
+      - name: snapshot_date
+        tests:
+          - not_null
+          - unique
+
+      - name: latest_hour_ts
+        tests:
+          - not_null
+
+      - name: exchange_reserve_return_1d
+        description: "One-day return of total exchange reserve."
+
+
+  - name: int_macro_daily
+    description: >
+      Daily macro proxy features from Tiingo macro assets such as SP500, NASDAQ,
+      GOLD, VIX and OIL. Grain: one row per price_date.
+    columns:
+      - name: price_date
+        tests:
+          - not_null
+          - unique
+
+      - name: macro_risk_regime
+        description: "Macro risk regime derived from equity, gold and VIX returns."
+        tests:
+          - accepted_values:
+              values: ['RISK_OFF', 'RISK_ON', 'DEFENSIVE', 'NEUTRAL']
+              config:
+                severity: warn
+
+      - name: macro_risk_appetite_score
+        description: "Simple macro risk appetite score using equity and volatility proxies."
+
+
+  - name: int_etf_daily
+    description: >
+      Daily crypto ETF price-action, volume, momentum and flow-proxy features
+      from Tiingo ETF assets. Grain: one row per price_date.
+    columns:
+      - name: price_date
+        tests:
+          - not_null
+          - unique
+
+      - name: crypto_etf_momentum_regime
+        description: "ETF momentum regime comparing BTC ETF and ETH ETF behavior."
+        tests:
+          - accepted_values:
+              values:
+                - 'BROAD_CRYPTO_ETF_BID'
+                - 'BROAD_CRYPTO_ETF_SELL_PRESSURE'
+                - 'BTC_ETF_LEADERSHIP'
+                - 'ETH_ETF_LEADERSHIP'
+                - 'NEUTRAL'
+              config:
+                severity: warn
+
+
+  - name: int_crypto_features_hourly
+    description: >
+      Wide hourly feature table for downstream dashboard marts and ML training
+      marts. Includes market, funding, liquidation, options, social, stablecoin,
+      exchange reserve, macro and ETF features. Macro and ETF data are joined
+      as-of by availability timestamp to reduce look-ahead leakage. Grain:
+      one row per hour_ts and symbol.
+    columns:
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['BTC', 'ETH']
+
+      - name: close_price
+        tests:
+          - not_null
+
+      - name: feature_available_at
+        description: "Latest timestamp when all joined features are available."
+        tests:
+          - not_null
+
+      - name: composite_market_regime
+        description: "Composite regime label combining market, funding, social, derivative and macro signals."
+        tests:
+          - accepted_values:
+              values:
+                - 'BULLISH_MOMENTUM'
+                - 'BEARISH_PRESSURE'
+                - 'STRESS_RISK'
+                - 'MACRO_RISK_OFF'
+                - 'NEUTRAL'
+              config:
+                severity: warn
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - hour_ts
+            - symbol

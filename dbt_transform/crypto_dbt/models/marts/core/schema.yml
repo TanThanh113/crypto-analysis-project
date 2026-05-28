@@ -1,0 +1,148 @@
+version: 2
+
+models:
+  - name: dim_symbols
+    description: "Core symbol dimension for dashboard and ML layers."
+    columns:
+      - name: symbol_key
+        tests:
+          - not_null
+          - unique
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+      - name: pair_symbol
+        tests:
+          - not_null
+
+      - name: dashboard_enabled
+        tests:
+          - not_null
+
+      - name: ml_enabled
+        tests:
+          - not_null
+
+  - name: dim_exchanges
+    description: "Core exchange dimension combining CEX reserve exchanges and derivatives venues."
+    columns:
+      - name: exchange_key
+        tests:
+          - not_null
+          - unique
+
+      - name: exchange_name
+        tests:
+          - not_null
+
+      - name: exchange_type
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['cex', 'derivatives']
+
+      - name: market_type
+        tests:
+          - not_null
+
+  - name: dim_time
+    description: "Hourly UTC time dimension spanning available crypto feature history."
+    columns:
+      - name: time_key
+        tests:
+          - not_null
+          - unique
+
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: date_key
+        tests:
+          - not_null
+
+      - name: trading_session_utc
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - asia_early
+                  - asia_europe_overlap
+                  - europe_us_overlap
+                  - us_late
+
+  - name: fact_crypto_features_hourly
+    description: "Gold hourly crypto feature fact table shared by dashboard marts and ML marts."
+    columns:
+      - name: crypto_feature_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: feature_date
+        tests:
+          - not_null
+
+      - name: symbol_key
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_symbols')
+                field: symbol_key
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+      - name: close_price
+        tests:
+          - not_null
+
+      - name: feature_available_at
+        tests:
+          - not_null
+
+      - name: market_regime
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - NO_PRICE
+                  - SYSTEM_RISK
+                  - RISK_OFF_SELL_PRESSURE
+                  - BULLISH_RISK_ON
+                  - BEARISH_MOMENTUM
+                  - LEVERAGE_CROWDED
+                  - NEUTRAL
+
+      - name: core_signal
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - NO_SIGNAL
+                  - REDUCE_RISK
+                  - BULLISH
+                  - BEARISH
+                  - NEUTRAL
+
+      - name: overall_risk_score
+        tests:
+          - not_null

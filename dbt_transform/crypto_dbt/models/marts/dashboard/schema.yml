@@ -1,0 +1,664 @@
+version: 2
+
+models:
+  - name: dim_dashboard_metric_catalog
+    description: "Metric catalog for dashboard sections, display labels, units, source model, and chart hints."
+    columns:
+      - name: metric_catalog_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: dashboard_section
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - market
+                  - derivatives
+                  - liquidation
+                  - social
+                  - liquidity
+                  - macro_etf
+                  - signal
+
+      - name: source_model
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - fact_crypto_features_hourly
+                  - int_liquidation_bucket_hourly
+
+      - name: metric_name
+        tests:
+          - not_null
+
+      - name: display_name
+        tests:
+          - not_null
+
+      - name: default_chart_type
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - line
+                  - bar
+                  - heatmap
+                  - gauge
+                  - table
+
+      - name: value_type
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - numeric
+                  - category
+
+  - name: mart_dashboard_kpi_latest
+    description: "Latest KPI card layer by symbol for the landing page of the crypto dashboard."
+    columns:
+      - name: dashboard_kpi_latest_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: close_price
+        tests:
+          - not_null
+
+      - name: freshness_status
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - FRESH
+                  - STALE
+                  - OLD
+
+      - name: risk_badge
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - LOW
+                  - MEDIUM
+                  - HIGH
+                  - CRITICAL
+
+  - name: mart_dashboard_market_overview_hourly
+    description: "Hourly market overview table for OHLCV, returns, volume, volatility, momentum, and risk panels."
+    columns:
+      - name: dashboard_market_overview_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+      - name: close_price
+        tests:
+          - not_null
+
+      - name: candle_direction
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - GREEN
+                  - RED
+                  - FLAT
+
+      - name: volume_regime
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - EXTREME_VOLUME
+                  - HIGH_VOLUME
+                  - LOW_VOLUME
+                  - NORMAL_VOLUME
+
+      - name: volatility_regime
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - EXTREME_VOLATILITY
+                  - HIGH_VOLATILITY
+                  - LOW_VOLATILITY
+                  - NORMAL_VOLATILITY
+
+      - name: momentum_regime
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - STRONG_UP
+                  - UP
+                  - SIDEWAYS
+                  - DOWN
+                  - STRONG_DOWN
+
+      - name: risk_regime
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - LOW_RISK
+                  - MEDIUM_RISK
+                  - HIGH_RISK
+                  - CRITICAL_RISK
+
+  - name: mart_dashboard_derivatives_risk_hourly
+    description: "Hourly derivatives risk view combining funding, basis, liquidation, and options positioning."
+    columns:
+      - name: dashboard_derivatives_risk_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+      - name: funding_bias_label
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - EXTREME_LONG_CROWDING
+                  - LONG_BIAS
+                  - NEUTRAL_FUNDING
+                  - SHORT_BIAS
+                  - EXTREME_SHORT_CROWDING
+
+      - name: options_positioning_label
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - PUT_HEAVY_DEFENSIVE
+                  - CALL_HEAVY_RISK_ON
+                  - BALANCED_OPTIONS
+
+      - name: liquidation_pressure_label
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - LONG_LIQUIDATION_DOMINANT
+                  - SHORT_LIQUIDATION_DOMINANT
+                  - BALANCED_LIQUIDATION
+
+      - name: derivatives_alert_level
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - LOW_DERIVATIVES_RISK
+                  - MEDIUM_DERIVATIVES_RISK
+                  - HIGH_DERIVATIVES_RISK
+                  - CRITICAL_DERIVATIVES_RISK
+
+  - name: mart_dashboard_liquidation_heatmap_hourly
+    description: "Bucket-level liquidation heatmap mart for price-zone visualization."
+    columns:
+      - name: dashboard_liquidation_heatmap_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+      - name: price_bucket
+        tests:
+          - not_null
+
+      - name: bucket_location
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - ABOVE_PRICE
+                  - BELOW_PRICE
+                  - AT_PRICE
+                  - UNKNOWN
+
+      - name: distance_band
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - NEAR_SPOT
+                  - MID_RANGE
+                  - FAR_RANGE
+                  - TAIL_RANGE
+
+      - name: heatmap_intensity_label
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - LOW_CLUSTER
+                  - MEDIUM_CLUSTER
+                  - HIGH_CLUSTER
+                  - EXTREME_CLUSTER
+
+  - name: mart_dashboard_options_risk_hourly
+    description: "Hourly options risk dashboard mart for IV, skew, open interest, and Greeks exposure proxies."
+    columns:
+      - name: dashboard_options_risk_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+      - name: implied_volatility_regime
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - EXTREME_IV
+                  - HIGH_IV
+                  - NORMAL_IV
+                  - LOW_IV
+
+      - name: iv_skew_label
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - PUT_SKEW_PANIC_HEDGE
+                  - CALL_SKEW_UPSIDE_DEMAND
+                  - BALANCED_SKEW
+
+      - name: oi_positioning_label
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - DEFENSIVE_OI
+                  - UPSIDE_OI
+                  - BALANCED_OI
+
+      - name: options_alert_level
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - LOW_OPTIONS_RISK
+                  - MEDIUM_OPTIONS_RISK
+                  - HIGH_OPTIONS_RISK
+                  - CRITICAL_OPTIONS_RISK
+
+  - name: mart_dashboard_social_sentiment_hourly
+    description: "Hourly social sentiment mart combining Reddit and Telegram metrics."
+    columns:
+      - name: dashboard_social_sentiment_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+      - name: social_sentiment_regime
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - EUPHORIC
+                  - BULLISH
+                  - NEUTRAL
+                  - BEARISH
+                  - PANIC
+
+      - name: social_attention_level
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - VIRAL_ATTENTION
+                  - HIGH_ATTENTION
+                  - NORMAL_ATTENTION
+                  - LOW_ATTENTION
+
+  - name: mart_dashboard_liquidity_risk_daily
+    description: "Daily system-level stablecoin and liquidity risk mart."
+    columns:
+      - name: dashboard_liquidity_risk_daily_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: feature_date
+        tests:
+          - not_null
+
+      - name: liquidity_risk_level
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - LOW_LIQUIDITY_RISK
+                  - MEDIUM_LIQUIDITY_RISK
+                  - HIGH_LIQUIDITY_RISK
+                  - CRITICAL_LIQUIDITY_RISK
+
+      - name: stablecoin_peg_status
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - PEG_STABLE
+                  - PEG_WATCH
+                  - DEPEG_ALERT
+
+      - name: stablecoin_liquidity_trend
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - LIQUIDITY_EXPANDING
+                  - LIQUIDITY_CONTRACTING
+                  - LIQUIDITY_FLAT
+
+      - name: exchange_reserve_trend
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - RESERVES_EXPANDING
+                  - RESERVES_CONTRACTING
+                  - RESERVES_FLAT
+
+  - name: mart_dashboard_exchange_risk_daily
+    description: "Daily exchange reserve, reserve utilization, and concentration risk mart."
+    columns:
+      - name: dashboard_exchange_risk_daily_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: feature_date
+        tests:
+          - not_null
+
+      - name: exchange_risk_level
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - LOW_EXCHANGE_RISK
+                  - MEDIUM_EXCHANGE_RISK
+                  - HIGH_EXCHANGE_RISK
+                  - CRITICAL_EXCHANGE_RISK
+
+      - name: reserve_concentration_label
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - DIVERSIFIED_RESERVES
+                  - MEDIUM_RESERVE_CONCENTRATION
+                  - HIGH_RESERVE_CONCENTRATION
+
+      - name: reserve_trend
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - RESERVES_INCREASING
+                  - RESERVES_DECREASING
+                  - RESERVES_FLAT
+
+      - name: reserve_utilization_trend
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - UTILIZATION_INCREASING
+                  - UTILIZATION_DECREASING
+                  - UTILIZATION_FLAT
+
+  - name: mart_dashboard_macro_etf_daily
+    description: "Daily macro and crypto ETF dashboard mart."
+    columns:
+      - name: dashboard_macro_etf_daily_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: feature_date
+        tests:
+          - not_null
+
+      - name: macro_dashboard_label
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - MACRO_RISK_ON
+                  - MACRO_NEUTRAL
+                  - MACRO_DEFENSIVE
+                  - MACRO_RISK_OFF
+
+      - name: etf_demand_label
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - BROAD_INSTITUTIONAL_DEMAND
+                  - BTC_LED_INSTITUTIONAL_DEMAND
+                  - ETH_LED_INSTITUTIONAL_DEMAND
+                  - INSTITUTIONAL_OUTFLOW_PRESSURE
+                  - ETF_NEUTRAL
+
+      - name: macro_risk_trend
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - MACRO_RISK_INCREASING
+                  - MACRO_RISK_DECREASING
+                  - MACRO_RISK_FLAT
+
+  - name: mart_dashboard_ai_signal_hourly
+    description: "Dashboard-ready signal layer derived from core signals and risk scores."
+    columns:
+      - name: dashboard_ai_signal_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+      - name: dashboard_signal
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - RISK_REDUCTION
+                  - BULLISH_SETUP
+                  - BEARISH_SETUP
+                  - SYSTEM_RISK_ALERT
+                  - NEUTRAL_WAIT
+
+      - name: dashboard_signal_direction
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - DEFENSIVE
+                  - BEARISH
+                  - BULLISH
+                  - NEUTRAL
+
+      - name: signal_confidence_label
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - HIGH_CONFIDENCE
+                  - MEDIUM_CONFIDENCE
+                  - LOW_CONFIDENCE
+
+  - name: mart_dashboard_alerts_hourly
+    description: "Exploded alert feed for operational and trading-risk dashboard panels."
+    columns:
+      - name: dashboard_alert_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+      - name: alert_type
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - SYSTEM_RISK
+                  - DERIVATIVES_CROWDING
+                  - LIQUIDATION_SQUEEZE
+                  - STABLECOIN_DEPEG
+                  - EXCHANGE_BANK_RUN
+                  - SOCIAL_PANIC
+                  - MACRO_RISK_OFF
+
+      - name: alert_category
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - risk
+                  - derivatives
+                  - liquidation
+                  - liquidity
+                  - exchange
+                  - social
+                  - macro
+
+      - name: alert_severity
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - CRITICAL
+                  - HIGH
+                  - MEDIUM
+                  - LOW
+
+  - name: mart_dashboard_data_freshness
+    description: "Freshness and row-count status table for dashboard health monitoring."
+    columns:
+      - name: dashboard_data_freshness_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: model_name
+        tests:
+          - not_null
+
+      - name: latest_available_at
+        tests:
+          - not_null
+
+      - name: row_count
+        tests:
+          - not_null
+
+      - name: freshness_status
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - FRESH
+                  - STALE
+                  - OLD
+                  - MISSING

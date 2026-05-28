@@ -1,0 +1,301 @@
+version: 2
+
+models:
+  - name: dim_ml_target_definitions
+    description: "Definitions and thresholds for ML targets used by label generation."
+    columns:
+      - name: target_catalog_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: target_name
+        tests:
+          - not_null
+          - unique
+
+      - name: target_type
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['classification', 'regression']
+
+      - name: horizon_hours
+        tests:
+          - not_null
+
+      - name: enabled
+        tests:
+          - not_null
+
+  - name: dim_ml_model_registry
+    description: "Lightweight registry documenting expected ML models and artifacts for the personal MLOps demo."
+    columns:
+      - name: model_registry_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: model_name
+        tests:
+          - not_null
+
+      - name: model_version
+        tests:
+          - not_null
+
+      - name: algorithm
+        tests:
+          - not_null
+
+      - name: problem_type
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['classification', 'regression']
+
+      - name: primary_target
+        tests:
+          - not_null
+
+      - name: training_table
+        tests:
+          - not_null
+
+      - name: inference_table
+        tests:
+          - not_null
+
+  - name: mart_ml_features_hourly
+    description: "Leakage-safe hourly ML feature table built from core gold features. Does not contain future labels."
+    columns:
+      - name: ml_feature_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+      - name: close_price
+        tests:
+          - not_null
+
+      - name: feature_available_at
+        tests:
+          - not_null
+
+      - name: feature_completeness_score
+        tests:
+          - not_null
+
+      - name: is_training_feature_ready
+        tests:
+          - not_null
+
+  - name: mart_ml_labels_hourly
+    description: "Future-return labels for ML training. This table is intentionally separated from features to prevent leakage."
+    columns:
+      - name: ml_label_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+      - name: close_price
+        tests:
+          - not_null
+
+      - name: future_direction_4h
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['UP', 'DOWN', 'FLAT']
+
+      - name: is_label_available
+        tests:
+          - not_null
+
+  - name: mart_ml_training_dataset_hourly
+    description: "Joined feature + label dataset with chronological train/validation/test split. Main table for local LightGBM/XGBoost training."
+    columns:
+      - name: ml_training_row_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: ml_feature_sk
+        tests:
+          - not_null
+
+      - name: ml_label_sk
+        tests:
+          - not_null
+
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+      - name: split_name
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['train', 'validation', 'test']
+
+      - name: future_direction_4h
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['UP', 'DOWN', 'FLAT']
+
+      - name: future_return_4h
+        tests:
+          - not_null
+
+      - name: is_training_row
+        tests:
+          - not_null
+
+  - name: mart_ml_prediction_input_hourly
+    description: "All eligible feature rows for realtime/batch inference. No label columns included."
+    columns:
+      - name: ml_prediction_input_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: ml_feature_sk
+        tests:
+          - not_null
+
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+  - name: mart_ml_prediction_input_latest
+    description: "Latest eligible feature row per symbol for predict_latest.py. No future labels included."
+    columns:
+      - name: ml_prediction_input_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: symbol
+        tests:
+          - not_null
+          - unique
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: close_price
+        tests:
+          - not_null
+
+  - name: mart_ml_feature_quality_daily
+    description: "Daily feature completeness and ML-readiness monitoring."
+    columns:
+      - name: ml_feature_quality_daily_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: feature_date
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+      - name: feature_rows
+        tests:
+          - not_null
+
+  - name: mart_ml_label_distribution_daily
+    description: "Daily distribution of UP/DOWN/FLAT labels for target balance monitoring."
+    columns:
+      - name: ml_label_quality_daily_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: label_date
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+  - name: mart_ml_naive_baseline_metrics
+    description: "Simple baseline metrics to compare real ML models against."
+    columns:
+      - name: ml_baseline_metric_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+      - name: split_name
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['train', 'validation', 'test']
+
+      - name: baseline_name
+        tests:
+          - not_null

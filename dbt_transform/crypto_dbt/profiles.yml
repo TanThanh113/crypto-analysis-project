@@ -1,0 +1,15 @@
+crypto_dbt:
+  target: dev
+
+  outputs:
+    dev:
+      type: bigquery
+      method: service-account
+      project: "{{ env_var('GCP_PROJECT_ID') }}"
+      dataset: "{{ env_var('BQ_ANALYTICS_DATASET', 'dbt_quants_dev') }}"
+      location: "{{ env_var('BQ_LOCATION', 'asia-southeast1') }}"
+      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS') }}"
+      threads: 4
+      timeout_seconds: 300
+      priority: interactive
+      retries: 1

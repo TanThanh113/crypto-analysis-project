@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: ml_outputs
+    description: "Tables written by Python training / inference jobs."
+    database: "{{ target.database }}"
+    schema: ml_outputs
+    tables:
+      - name: model_predictions
+        description: "Prediction rows written by predict_latest.py or Kestra inference job."
+      - name: model_metrics
+        description: "Model evaluation metrics written by train_model.py or Kestra training job."

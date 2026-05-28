@@ -1,0 +1,108 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# dbt
+dbt_transform/crypto_dbt/target/
+dbt_transform/crypto_dbt/logs/
+dbt_transform/crypto_dbt/.dbt/
+dbt_transform/logs/
+logs/
+
+# Local outputs
+local_scripts/output_data/
+local_scripts/batch/__pycache__/
+local_scripts/streaming/__pycache__/
+local_scripts/streaming/logs/
+
+# ML local artifacts
+ml/artifacts/
+*.joblib
+
+# Secrets and credentials
+.env
+.env.*
+*.key
+*.pem
+local_scripts/streaming/secrets/
+local_scripts/secret_kestra.sh
+**/*service-account*.json
+**/*credential*.json
+**/*credentials*.json
+**/*secret*.json
+**/kafka_connect_key.json
+
+# Terraform state / local vars
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+.terraform/
+.terraform.lock.hcl
+
+# OS / WSL files
+.DS_Store
+*:Zone.Identifier
+
+# Archives / binaries
+*.tgz
+*.zip
+*.jar:Zone.Identifier
+
+# Terraform / Grafana service account keys
+terraform/**/*key*.json
+terraform/**/*creds*.json
+terraform/**/*credential*.json
+terraform/**/*credentials*.json
+terraform/**/*secret*.json
+
+terraform-grafana/**/*key*.json
+terraform-grafana/**/*creds*.json
+terraform-grafana/**/*credential*.json
+terraform-grafana/**/*credentials*.json
+terraform-grafana/**/*secret*.json
+
+terraform-bootstrap/**/*key*.json
+terraform-bootstrap/**/*creds*.json
+terraform-bootstrap/**/*credential*.json
+terraform-bootstrap/**/*credentials*.json
+terraform-bootstrap/**/*secret*.json
+
+# Keep Grafana dashboard JSON as code
+!terraform-grafana/dashboards/
+!terraform-grafana/dashboards/*.json
+
+# Block all Terraform-related JSON credentials
+terraform/**/*.json
+terraform-bootstrap/**/*.json
+terraform-grafana/**/*.json
+
+# But keep Grafana dashboard JSON as code
+!terraform-grafana/dashboards/
+!terraform-grafana/dashboards/*.json
+
+# dbt generated packages
+dbt_transform/crypto_dbt/dbt_packages/
+
+# local encoded env
+.env_encoded
+*.env_encoded
+local_scripts/.env_encoded
+
+# Local env files anywhere
+**/.env
+**/.env.*
+
+# Backfill local output/state files
+local_scripts/batch/backfill/output_data/
+local_scripts/batch/backfill/**/output_data/
+local_scripts/batch/backfill/**/_state/
+local_scripts/batch/backfill/**/*.success
+local_scripts/batch/backfill/**/*.parquet
+local_scripts/batch/backfill/**/*.csv
+local_scripts/batch/backfill/**/*.jsonl
+
+# Streaming pipeline will be productionized later
+local_scripts/streaming/

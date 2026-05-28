@@ -1,0 +1,78 @@
+version: 2
+
+exposures:
+  - name: crypto_executive_dashboard
+    label: Crypto Executive Dashboard
+    type: dashboard
+    maturity: high
+    url: https://lookerstudio.google.com/
+    description: >
+      Main dashboard landing page for BTC/ETH KPIs, market regime, risk badges,
+      alerts, AI signals, and data freshness monitoring.
+      [Tags: dashboard, executive, crypto]
+      [Tool: looker_studio | Area: executive_monitoring | Priority: high]
+    depends_on:
+      - ref('mart_dashboard_kpi_latest')
+      - ref('mart_dashboard_ai_signal_hourly')
+      - ref('mart_dashboard_alerts_hourly')
+      - ref('mart_dashboard_data_freshness')
+      - ref('dim_dashboard_metric_catalog')
+    owner:
+      name: Crypto Analytics Team
+      email: crypto-analytics@example.com
+
+  - name: crypto_market_overview_dashboard
+    label: Crypto Market Overview Dashboard
+    type: dashboard
+    maturity: high
+    url: https://lookerstudio.google.com/
+    description: >
+      OHLCV, returns, momentum, volume regime, volatility regime, and market risk
+      overview dashboard for BTC/ETH.
+      [Tags: dashboard, market, crypto]
+      [Tool: looker_studio | Area: market_monitoring | Priority: high]
+    depends_on:
+      - ref('mart_dashboard_market_overview_hourly')
+      - ref('dim_dashboard_metric_catalog')
+    owner:
+      name: Crypto Analytics Team
+      email: crypto-analytics@example.com
+
+  - name: crypto_derivatives_risk_dashboard
+    label: Crypto Derivatives Risk Dashboard
+    type: dashboard
+    maturity: high
+    url: https://lookerstudio.google.com/
+    description: >
+      Funding, basis, liquidation heatmap, options IV, skew, open interest,
+      Greeks exposure proxies, and derivatives risk dashboard.
+      [Tags: dashboard, derivatives, liquidation, options, crypto]
+      [Tool: looker_studio | Area: derivatives_risk | Priority: high]
+    depends_on:
+      - ref('mart_dashboard_derivatives_risk_hourly')
+      - ref('mart_dashboard_liquidation_heatmap_hourly')
+      - ref('mart_dashboard_options_risk_hourly')
+      - ref('dim_dashboard_metric_catalog')
+    owner:
+      name: Crypto Analytics Team
+      email: crypto-analytics@example.com
+
+  - name: crypto_social_liquidity_dashboard
+    label: Crypto Social and Liquidity Dashboard
+    type: dashboard
+    maturity: medium
+    url: https://lookerstudio.google.com/
+    description: >
+      Social sentiment, stablecoin liquidity, exchange reserve risk, macro regime,
+      and crypto ETF demand dashboard.
+      [Tags: dashboard, social, liquidity, macro, etf, crypto]
+      [Tool: looker_studio | Area: social_liquidity_macro | Priority: medium]
+    depends_on:
+      - ref('mart_dashboard_social_sentiment_hourly')
+      - ref('mart_dashboard_liquidity_risk_daily')
+      - ref('mart_dashboard_exchange_risk_daily')
+      - ref('mart_dashboard_macro_etf_daily')
+      - ref('dim_dashboard_metric_catalog')
+    owner:
+      name: Crypto Analytics Team
+      email: crypto-analytics@example.com

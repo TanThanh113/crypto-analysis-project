@@ -1,0 +1,23 @@
+# 1. Chặn tuyệt đối các file cấu hình môi trường (Bảo mật 100%)
+**/.env
+**/.env.*
+
+# 2. Chặn các thư mục chứa dữ liệu thô cào về (Giảm nhẹ Image)
+**/output_data/
+**/output/
+**/_processed/
+**/*.parquet
+**/*.csv
+**/*.json
+
+# 3. Chặn rác của Python (Để Image sạch sẽ nhất)
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.pytest_cache/
+
+# 4. Chặn môi trường ảo (Vì Docker đã tự build môi trường riêng rồi)
+.venv/
+venv/
+env/
