@@ -1,0 +1,180 @@
+id: the_crypto_pipeline_overview
+namespace: crypto.data_engineering
+
+description: |
+  Master overview flow for demo and topology visualization.
+  It calls the main production branches as subflows.
+
+inputs:
+  - id: run_hourly_branch
+    type: BOOLEAN
+    defaults: false
+
+  - id: run_intraday_branch
+    type: BOOLEAN
+    defaults: false
+
+  - id: run_daily_market_branch
+    type: BOOLEAN
+    defaults: false
+
+  - id: run_macro_branch
+    type: BOOLEAN
+    defaults: false
+
+  - id: run_etf_branch
+    type: BOOLEAN
+    defaults: false
+
+  - id: run_ml_train
+    type: BOOLEAN
+    defaults: false
+
+  - id: run_ml_predict
+    type: BOOLEAN
+    defaults: false
+
+  - id: run_streaming_predict
+    type: BOOLEAN
+    defaults: false
+
+tasks:
+  - id: overview_start
+    type: io.kestra.plugin.core.log.Log
+    message: |
+      Starting crypto pipeline overview demo.
+
+      Production topology:
+      the_hourly_snapshot -> the_dbt_hourly_transform -> the_ml_predict_hourly
+      the_intraday_shift -> the_dbt_intraday_transform
+      daily_binance -> the_dbt_daily_market_transform -> optional the_ml_train_daily
+      daily_macro -> the_dbt_daily_macro_transform
+      daily_etf -> the_dbt_daily_etf_transform
+
+  - id: hourly_branch
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ inputs.run_hourly_branch }}"
+    then:
+      - id: run_the_hourly_snapshot
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_hourly_snapshot
+        wait: true
+        transmitFailed: true
+
+      - id: run_the_dbt_hourly_transform
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_dbt_hourly_transform
+        wait: true
+        transmitFailed: true
+
+  - id: intraday_branch
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ inputs.run_intraday_branch }}"
+    then:
+      - id: run_the_intraday_shift
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_intraday_shift
+        wait: true
+        transmitFailed: true
+
+      - id: run_the_dbt_intraday_transform
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_dbt_intraday_transform
+        wait: true
+        transmitFailed: true
+
+  - id: daily_market_branch
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ inputs.run_daily_market_branch }}"
+    then:
+      - id: run_daily_binance
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_daily_snapshot_binance
+        wait: true
+        transmitFailed: true
+
+      - id: run_the_dbt_daily_market_transform
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_dbt_daily_market_transform
+        wait: true
+        transmitFailed: true
+
+      - id: daily_train_branch
+        type: io.kestra.plugin.core.flow.If
+        condition: "{{ inputs.run_ml_train }}"
+        then:
+          - id: run_the_ml_train_daily
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace: crypto.data_engineering
+            flowId: the_ml_train_daily
+            wait: true
+            transmitFailed: true
+
+  - id: macro_branch
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ inputs.run_macro_branch }}"
+    then:
+      - id: run_daily_macro
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_daily_snapshot_macro
+        wait: true
+        transmitFailed: true
+
+      - id: run_the_dbt_daily_macro_transform
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_dbt_daily_macro_transform
+        wait: true
+        transmitFailed: true
+
+  - id: etf_branch
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ inputs.run_etf_branch }}"
+    then:
+      - id: run_daily_etf
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_daily_snapshot_etf
+        wait: true
+        transmitFailed: true
+
+      - id: run_the_dbt_daily_etf_transform
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_dbt_daily_etf_transform
+        wait: true
+        transmitFailed: true
+
+  - id: streaming_branch
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ inputs.run_streaming_predict }}"
+    then:
+      - id: run_hourly_streaming_predict
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_streaming_hourly_transform
+        wait: true
+        transmitFailed: true
+
+      - id: hourly_predict_branch
+        type: io.kestra.plugin.core.flow.If
+        condition: "{{ inputs.run_ml_predict }}"
+        then:
+          - id: run_the_ml_predict_hourly
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace: crypto.data_engineering
+            flowId: the_ml_predict_hourly
+            wait: true
+            transmitFailed: true
+
+  - id: overview_done
+    type: io.kestra.plugin.core.log.Log
+    message: |
+      Crypto pipeline overview demo finished.

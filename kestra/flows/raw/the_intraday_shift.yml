@@ -1,0 +1,232 @@
+id: the_intraday_shift
+namespace: crypto.data_engineering
+description: Run 3 data scraping and uploading threads simultaneously.
+
+variables:
+  gcs_bucket: "{{ secret('GCP_BUCKET_NAME') }}"
+
+pluginDefaults:
+  - type: io.kestra.plugin.gcp
+    values:
+      serviceAccount: "{{ secret('GCP_CREDS') }}"
+      projectId: "{{ secret('GCP_PROJECT_ID') }}"
+      location: "{{ secret('GCP_LOCATION') }}"
+
+triggers:
+  - id: hourly_schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 0,7,13,19 * * *"
+    recoverMissedSchedules: NONE
+
+tasks:
+  - id: run_all_jobs_at_once
+    type: io.kestra.plugin.core.flow.Parallel
+    concurrent: 3
+    tasks:
+
+      # TASK 1: REDDIT SCRAP
+      - id: branch_reddit_sentiment
+        type: io.kestra.plugin.core.flow.WorkingDirectory
+        tasks:
+          - id: extract_reddit_sentiment
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            env:
+              OUTPUT_DIR: "output_data"
+              COINALYZE_API_KEY: "{{ secret('COINALYZE_API_KEY') }}"
+            script: |
+              mkdir -p output_data
+              python /app/batch/reddit_sentiment.py --manager iceberg
+
+          - id: validate_reddit_sentiment_raw
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            env:
+              OUTPUT_DIR: "output_data"
+            script: |
+              python /app/batch/data_validator.py \
+              --dataset reddit_raw \
+              --file_pattern "reddit_raw_*.parquet"
+
+          - id: upload_reddit_sentiment_raw
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            inputFiles:
+              gcp-key.json: "{{ secret('GCP_CREDS') }}"
+            env:
+              GOOGLE_APPLICATION_CREDENTIALS: "gcp-key.json"
+              GCP_PROJECT_ID: "{{ secret('GCP_PROJECT_ID') }}"
+              GCP_BUCKET_NAME: "{{ vars.gcs_bucket }}"
+              GCP_LOCATION: "{{ secret('GCP_LOCATION') }}"
+              ICEBERG_WAREHOUSE: "bq://projects/{{ secret('GCP_PROJECT_ID') }}/locations/{{ secret('GCP_LOCATION') }}"
+              OUTPUT_DIR: "output_data"
+              ICEBERG_DB: "raw_crypto_batch"
+              ICEBERG_TABLE: "reddit_sentiment_raw"
+              FILE_PATTERN: "reddit_raw_*.parquet"
+              ICEBERG_PARTITION_COL: "ingestion_time"
+            script: |
+              python /app/batch/iceberg_loader.py
+
+          - id: upload_reddit_sentiment_summary
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            inputFiles:
+              gcp-key.json: "{{ secret('GCP_CREDS') }}"
+            env:
+              GOOGLE_APPLICATION_CREDENTIALS: "gcp-key.json"
+              GCP_PROJECT_ID: "{{ secret('GCP_PROJECT_ID') }}"
+              GCP_BUCKET_NAME: "{{ vars.gcs_bucket }}"
+              GCP_LOCATION: "{{ secret('GCP_LOCATION') }}"
+              ICEBERG_WAREHOUSE: "bq://projects/{{ secret('GCP_PROJECT_ID') }}/locations/{{ secret('GCP_LOCATION') }}"
+              OUTPUT_DIR: "output_data"
+              ICEBERG_DB: "summary_crypto_batch"
+              ICEBERG_TABLE: "reddit_sentiment_summary"
+              FILE_PATTERN: "reddit_summary_*.parquet"
+              ICEBERG_PARTITION_COL: "ingestion_time"
+            script: |
+              python /app/batch/iceberg_loader.py
+
+      # TASK 2: TELEGRAM TELETHON
+      - id: branch_telegram_sentiment
+        type: io.kestra.plugin.core.flow.WorkingDirectory
+        tasks:
+          - id: extract_telegram_sentiment
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            env:
+              OUTPUT_DIR: "output_data"
+              API_ID: "{{ secret('API_ID') }}"
+              API_HASH: "{{ secret('API_HASH') }}"
+              TELEGRAM_SESSION_STRING: "{{ secret('TELEGRAM_SESSION_STRING') }}"
+            script: |
+              mkdir -p output_data
+              python /app/batch/telegram_sentiment.py --manager iceberg
+
+          - id: validate_telegram_sentiment_raw
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            env:
+              OUTPUT_DIR: "output_data"
+            script: |
+              python /app/batch/data_validator.py \
+              --dataset telegram_raw \
+              --file_pattern "telegram_raw_*.parquet"
+
+          - id: upload_telegram_sentiment_raw
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            inputFiles:
+              gcp-key.json: "{{ secret('GCP_CREDS') }}"
+            env:
+              GOOGLE_APPLICATION_CREDENTIALS: "gcp-key.json"
+              GCP_PROJECT_ID: "{{ secret('GCP_PROJECT_ID') }}"
+              GCP_BUCKET_NAME: "{{ vars.gcs_bucket }}"
+              GCP_LOCATION: "{{ secret('GCP_LOCATION') }}"
+              ICEBERG_WAREHOUSE: "bq://projects/{{ secret('GCP_PROJECT_ID') }}/locations/{{ secret('GCP_LOCATION') }}"
+              OUTPUT_DIR: "output_data"
+              ICEBERG_DB: "raw_crypto_batch"
+              ICEBERG_TABLE: "telegram_sentiment_raw"
+              FILE_PATTERN: "telegram_raw_*.parquet"
+              ICEBERG_PARTITION_COL: "ingestion_time"
+            script: |
+              python /app/batch/iceberg_loader.py
+
+          - id: upload_telegram_sentiment_summary
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            inputFiles:
+              gcp-key.json: "{{ secret('GCP_CREDS') }}"
+            env:
+              GOOGLE_APPLICATION_CREDENTIALS: "gcp-key.json"
+              GCP_PROJECT_ID: "{{ secret('GCP_PROJECT_ID') }}"
+              GCP_BUCKET_NAME: "{{ vars.gcs_bucket }}"
+              GCP_LOCATION: "{{ secret('GCP_LOCATION') }}"
+              ICEBERG_WAREHOUSE: "bq://projects/{{ secret('GCP_PROJECT_ID') }}/locations/{{ secret('GCP_LOCATION') }}"
+              OUTPUT_DIR: "output_data"
+              ICEBERG_DB: "summary_crypto_batch"
+              ICEBERG_TABLE: "telegram_sentiment_summary"
+              FILE_PATTERN: "telegram_summary_*.parquet"
+              ICEBERG_PARTITION_COL: "ingestion_time"
+            script: |
+              python /app/batch/iceberg_loader.py
+
+      # TASK 3: EXCHANGE RESERVES
+      - id: branch_exchange_reserves
+        type: io.kestra.plugin.core.flow.WorkingDirectory
+        tasks:
+          - id: extract_exchange_reserves
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            env:
+              OUTPUT_DIR: "output_data"
+              COINGECKO_API_KEY: "{{ secret('COINGECKO_API_KEY') }}"
+              ARKHAM_API_KEY: "{{ secret('ARKHAM_API_KEY') }}"
+            script: |
+              mkdir -p output_data
+              python /app/batch/exchange_reserves_collector.py --manager iceberg
+
+          - id: validate_exchange_reserves
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            env:
+              OUTPUT_DIR: "output_data"
+            script: |
+              python /app/batch/data_validator.py \
+              --dataset exchange_reserve \
+              --file_pattern "exchange_reserve_*.parquet"
+
+          - id: upload_exchange_reserves
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            inputFiles:
+              gcp-key.json: "{{ secret('GCP_CREDS') }}"
+            env:
+              GOOGLE_APPLICATION_CREDENTIALS: "gcp-key.json"
+              GCP_PROJECT_ID: "{{ secret('GCP_PROJECT_ID') }}"
+              GCP_BUCKET_NAME: "{{ vars.gcs_bucket }}"
+              GCP_LOCATION: "{{ secret('GCP_LOCATION') }}"
+              ICEBERG_WAREHOUSE: "bq://projects/{{ secret('GCP_PROJECT_ID') }}/locations/{{ secret('GCP_LOCATION') }}"
+              OUTPUT_DIR: "output_data"
+              ICEBERG_DB: "raw_crypto_batch"
+              ICEBERG_TABLE: "exchange_reserve_raw"
+              FILE_PATTERN: "exchange_reserve_*.parquet"
+              ICEBERG_PARTITION_COL: "ingestion_time"
+            script: |
+              python /app/batch/iceberg_loader.py
+
+  - id: purge_files
+    type: io.kestra.plugin.core.storage.PurgeCurrentExecutionFiles
+    description: To avoid cluttering your storage, we will remove the downloaded files

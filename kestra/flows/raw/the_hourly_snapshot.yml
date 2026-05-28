@@ -1,0 +1,234 @@
+id: the_hourly_snapshot
+namespace: crypto.data_engineering
+description: Run 4 data scraping and uploading threads simultaneously.
+
+variables:
+  gcs_bucket: "{{ secret('GCP_BUCKET_NAME') }}"
+
+pluginDefaults:
+  - type: io.kestra.plugin.gcp
+    values:
+      serviceAccount: "{{ secret('GCP_CREDS') }}"
+      projectId: "{{ secret('GCP_PROJECT_ID') }}"
+      location: "{{ secret('GCP_LOCATION') }}"
+
+triggers:
+  - id: hourly_schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 * * * *"
+    recoverMissedSchedules: NONE
+
+tasks:
+  - id: run_all_jobs_at_once
+    type: io.kestra.plugin.core.flow.Parallel
+    concurrent: 4
+    tasks:
+
+      # TASK 1: LIQUIDATION MAP
+      - id: branch_liquidation
+        type: io.kestra.plugin.core.flow.WorkingDirectory
+        tasks:
+          - id: extract_liquidation
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            env:
+              OUTPUT_DIR: "output_data"
+              COINALYZE_API_KEY: "{{ secret('COINALYZE_API_KEY') }}"
+            script: |
+              mkdir -p output_data
+              python /app/batch/liquidation_heatmap.py --manager iceberg
+
+          - id: validate_liquidation
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            env:
+              OUTPUT_DIR: "output_data"
+            script: |
+              python /app/batch/data_validator.py \
+              --dataset liquidation_map \
+              --file_pattern "liquidation_map_*.parquet"
+
+          - id: upload_liquidation
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            inputFiles:
+              gcp-key.json: "{{ secret('GCP_CREDS') }}"
+            env:
+              GOOGLE_APPLICATION_CREDENTIALS: "gcp-key.json"
+              GCP_PROJECT_ID: "{{ secret('GCP_PROJECT_ID') }}"
+              GCP_BUCKET_NAME: "{{ vars.gcs_bucket }}"
+              GCP_LOCATION: "{{ secret('GCP_LOCATION') }}"
+              ICEBERG_WAREHOUSE: "bq://projects/{{ secret('GCP_PROJECT_ID') }}/locations/{{ secret('GCP_LOCATION') }}"
+              OUTPUT_DIR: "output_data"
+              ICEBERG_DB: "raw_crypto_batch"
+              ICEBERG_TABLE: "liquidation_raw"
+              FILE_PATTERN: "liquidation_map_*.parquet"
+              ICEBERG_PARTITION_COL: "ingestion_time"
+            script: |
+              python /app/batch/iceberg_loader.py
+
+      # TASK 2: FUNDING RATES
+      - id: branch_funding
+        type: io.kestra.plugin.core.flow.WorkingDirectory
+        tasks:
+          - id: extract_funding
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            env:
+              OUTPUT_DIR: "output_data"
+            script: |
+              mkdir -p output_data
+              python /app/batch/funding_basis_collector.py --manager iceberg
+
+          - id: validate_funding
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            env:
+              OUTPUT_DIR: "output_data"
+            script: |
+              python /app/batch/data_validator.py \
+              --dataset funding_rates \
+              --file_pattern "funding_rates_*.parquet"
+
+          - id: upload_funding
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            inputFiles:
+              gcp-key.json: "{{ secret('GCP_CREDS') }}"
+            env:
+              GOOGLE_APPLICATION_CREDENTIALS: "gcp-key.json"
+              GCP_PROJECT_ID: "{{ secret('GCP_PROJECT_ID') }}"
+              GCP_BUCKET_NAME: "{{ vars.gcs_bucket }}"
+              GCP_LOCATION: "{{ secret('GCP_LOCATION') }}"
+              ICEBERG_WAREHOUSE: "bq://projects/{{ secret('GCP_PROJECT_ID') }}/locations/{{ secret('GCP_LOCATION') }}"
+              OUTPUT_DIR: "output_data"
+              ICEBERG_DB: "raw_crypto_batch"
+              ICEBERG_TABLE: "funding_raw"
+              FILE_PATTERN: "funding_rates_*.parquet"
+              ICEBERG_PARTITION_COL: "ingestion_time"
+            script: |
+              python /app/batch/iceberg_loader.py
+
+      # TASK 3: DERIBIT OPTIONS
+      - id: branch_options
+        type: io.kestra.plugin.core.flow.WorkingDirectory
+        tasks:
+          - id: extract_options
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            env:
+              OUTPUT_DIR: "output_data"
+            script: |
+              mkdir -p output_data
+              python /app/batch/deribit_options_collector.py --manager iceberg
+
+          - id: validate_options
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            env:
+              OUTPUT_DIR: "output_data"
+            script: |
+              python /app/batch/data_validator.py \
+              --dataset deribit_options \
+              --file_pattern "deribit_options_*.parquet"
+
+          - id: upload_options
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            inputFiles:
+              gcp-key.json: "{{ secret('GCP_CREDS') }}"
+            env:
+              GOOGLE_APPLICATION_CREDENTIALS: "gcp-key.json"
+              GCP_PROJECT_ID: "{{ secret('GCP_PROJECT_ID') }}"
+              GCP_BUCKET_NAME: "{{ vars.gcs_bucket }}"
+              GCP_LOCATION: "{{ secret('GCP_LOCATION') }}"
+              ICEBERG_WAREHOUSE: "bq://projects/{{ secret('GCP_PROJECT_ID') }}/locations/{{ secret('GCP_LOCATION') }}"
+              OUTPUT_DIR: "output_data"
+              ICEBERG_DB: "raw_crypto_batch"
+              ICEBERG_TABLE: "options_raw"
+              FILE_PATTERN: "deribit_options_*.parquet"
+              ICEBERG_PARTITION_COL: "ingestion_time"
+            script: |
+              python /app/batch/iceberg_loader.py
+
+      # TASK 4: STABLECOIN SUPPLY
+      - id: branch_stablecoin
+        type: io.kestra.plugin.core.flow.WorkingDirectory
+        tasks:
+          - id: extract_stablecoin
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            env:
+              OUTPUT_DIR: "output_data"
+            script: |
+              mkdir -p output_data
+              python /app/batch/stablecoin_supply_collector.py --manager iceberg
+
+          - id: validate_stablecoin
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            env:
+              OUTPUT_DIR: "output_data"
+            script: |
+              python /app/batch/data_validator.py \
+              --dataset stablecoin_supply \
+              --file_pattern "stablecoin_supply_*.parquet"
+
+          - id: upload_stablecoin
+            type: io.kestra.plugin.scripts.shell.Script
+            containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+            taskRunner:
+              type: io.kestra.plugin.scripts.runner.docker.Docker
+              pullPolicy: ALWAYS
+            inputFiles:
+              gcp-key.json: "{{ secret('GCP_CREDS') }}"
+            env:
+              GOOGLE_APPLICATION_CREDENTIALS: "gcp-key.json"
+              GCP_PROJECT_ID: "{{ secret('GCP_PROJECT_ID') }}"
+              GCP_BUCKET_NAME: "{{ vars.gcs_bucket }}"
+              GCP_LOCATION: "{{ secret('GCP_LOCATION') }}"
+              ICEBERG_WAREHOUSE: "bq://projects/{{ secret('GCP_PROJECT_ID') }}/locations/{{ secret('GCP_LOCATION') }}"
+              OUTPUT_DIR: "output_data"
+              ICEBERG_DB: "raw_crypto_batch"
+              ICEBERG_TABLE: "stablecoin_supply_raw"
+              FILE_PATTERN: "stablecoin_supply_*.parquet"
+              ICEBERG_PARTITION_COL: "ingestion_time"
+            script: |
+              python /app/batch/iceberg_loader.py
+
+  - id: purge_files
+    type: io.kestra.plugin.core.storage.PurgeCurrentExecutionFiles
+    description: To avoid cluttering your storage, we will remove the downloaded files

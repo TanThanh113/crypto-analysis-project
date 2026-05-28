@@ -1,0 +1,45 @@
+id: the_dbt_daily_macro_transform
+namespace: crypto.data_engineering
+
+description: |
+  Daily macro dbt transform after macro ingestion.
+
+triggers:
+  - id: after_daily_macro
+    type: io.kestra.plugin.core.trigger.Flow
+    preconditions:
+      id: daily_macro_success
+      flows:
+        - namespace: crypto.data_engineering
+          flowId: the_daily_snapshot_macro
+          states: [SUCCESS]
+
+tasks:
+  - id: dbt_daily_macro_transform
+    type: io.kestra.plugin.scripts.shell.Commands
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: ALWAYS
+    containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-dbt:latest
+    inputFiles:
+      gcp-key.json: "{{ secret('GCP_CREDS') }}"
+    env:
+      GOOGLE_APPLICATION_CREDENTIALS: "gcp-key.json"
+      GCP_PROJECT_ID: "{{ secret('GCP_PROJECT_ID') }}"
+      BQ_ANALYTICS_DATASET: dbt_quants_dev
+      BQ_ML_OUTPUTS_DATASET: ml_outputs
+      BQ_LOCATION: asia-southeast1
+    commands:
+      - cp gcp-key.json /app/crypto_dbt/gcp-key.json
+      - cd /app/crypto_dbt
+      - |
+        uv run dbt build \
+          --select \
+            int_macro_daily \
+            fact_crypto_features_hourly \
+            mart_dashboard_kpi_latest \
+            mart_dashboard_macro_etf_daily \
+            mart_dashboard_data_freshness \
+            mart_ml_features_hourly \
+            mart_ml_feature_quality_daily \
+          --no-partial-parse

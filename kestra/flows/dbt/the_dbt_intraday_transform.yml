@@ -1,0 +1,50 @@
+id: the_dbt_intraday_transform
+namespace: crypto.data_engineering
+
+description: |
+  Intraday dbt transform after Reddit, Telegram, and exchange reserve ingestion.
+
+triggers:
+  - id: after_the_intraday_shift
+    type: io.kestra.plugin.core.trigger.Flow
+    preconditions:
+      id: intraday_shift_success
+      flows:
+        - namespace: crypto.data_engineering
+          flowId: the_intraday_shift
+          states: [SUCCESS]
+
+tasks:
+  - id: dbt_intraday_transform
+    type: io.kestra.plugin.scripts.shell.Commands
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: ALWAYS
+    containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-dbt:latest
+    inputFiles:
+      gcp-key.json: "{{ secret('GCP_CREDS') }}"
+    env:
+      GOOGLE_APPLICATION_CREDENTIALS: "gcp-key.json"
+      GCP_PROJECT_ID: "{{ secret('GCP_PROJECT_ID') }}"
+      BQ_ANALYTICS_DATASET: dbt_quants_dev
+      BQ_ML_OUTPUTS_DATASET: ml_outputs
+      BQ_LOCATION: asia-southeast1
+    commands:
+      - cp gcp-key.json /app/crypto_dbt/gcp-key.json
+      - cd /app/crypto_dbt
+      - |
+        uv run dbt build \
+          --select \
+            int_reddit_sentiment_hourly \
+            int_telegram_sentiment_hourly \
+            int_social_sentiment_hourly \
+            int_exchange_reserve_hourly \
+            fact_crypto_features_hourly \
+            mart_dashboard_kpi_latest \
+            mart_dashboard_social_sentiment_hourly \
+            mart_dashboard_exchange_risk_daily \
+            mart_dashboard_liquidity_risk_daily \
+            mart_dashboard_data_freshness \
+            mart_ml_features_hourly \
+            mart_ml_feature_quality_daily \
+          --no-partial-parse

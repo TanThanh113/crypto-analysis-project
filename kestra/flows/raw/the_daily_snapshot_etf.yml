@@ -1,0 +1,76 @@
+id: the_daily_snapshot_etf
+namespace: crypto.data_engineering
+
+variables:
+  gcs_bucket: "{{ secret('GCP_BUCKET_NAME') }}"
+
+pluginDefaults:
+  - type: io.kestra.plugin.gcp
+    values:
+      serviceAccount: "{{ secret('GCP_CREDS') }}"
+      projectId: "{{ secret('GCP_PROJECT_ID') }}"
+      location: "{{ secret('GCP_LOCATION') }}"
+
+triggers:
+  - id: daily_schedule_etf
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "30 22 * * *"
+    recoverMissedSchedules: NONE
+
+tasks:
+  # TASK: ETF FLOWS
+  - id: branch_etf_flows_collector
+    type: io.kestra.plugin.core.flow.WorkingDirectory
+    tasks:
+      - id: extract_etf_flows_collector
+        type: io.kestra.plugin.scripts.shell.Script
+        containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+          pullPolicy: ALWAYS
+        env:
+          OUTPUT_DIR: "output_data"
+          TIINGO_API_KEY: "{{ secret('TIINGO_API_KEY') }}"
+        script: |
+          mkdir -p output_data
+          python /app/batch/tiingo_extractor.py --type etf --manager iceberg
+
+      - id: validate_etf_flows_collector
+        type: io.kestra.plugin.scripts.shell.Script
+        containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+          pullPolicy: ALWAYS
+        env:
+          OUTPUT_DIR: "output_data"
+          GX_PROGRESS_BARS: "false"
+        script: |
+          python /app/batch/data_validator.py \
+          --dataset etf_indicators_raw \
+          --file_pattern "tiingo_etf_raw_*.parquet"
+
+      - id: upload_etf_flows_collector
+        type: io.kestra.plugin.scripts.shell.Script
+        containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+          pullPolicy: ALWAYS
+        inputFiles:
+          gcp-key.json: "{{ secret('GCP_CREDS') }}"
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: "gcp-key.json"
+          GCP_PROJECT_ID: "{{ secret('GCP_PROJECT_ID') }}"
+          GCP_BUCKET_NAME: "{{ vars.gcs_bucket }}"
+          GCP_LOCATION: "{{ secret('GCP_LOCATION') }}"
+          ICEBERG_WAREHOUSE: "bq://projects/{{ secret('GCP_PROJECT_ID') }}/locations/{{ secret('GCP_LOCATION') }}"
+          OUTPUT_DIR: "output_data"
+          ICEBERG_DB: "raw_crypto_batch"
+          ICEBERG_TABLE: "etf_indicators_raw"
+          FILE_PATTERN: "tiingo_etf_raw_*.parquet"
+          ICEBERG_PARTITION_COL: "ingestion_time"
+        script: |
+          python /app/batch/iceberg_loader.py
+
+  - id: purge_files
+    type: io.kestra.plugin.core.storage.PurgeCurrentExecutionFiles
+    description: To avoid cluttering your storage, we will remove the downloaded files

@@ -1,0 +1,79 @@
+id: the_daily_snapshot_binance
+namespace: crypto.data_engineering
+
+variables:
+  gcs_bucket: "{{ secret('GCP_BUCKET_NAME') }}"
+
+pluginDefaults:
+  - type: io.kestra.plugin.gcp
+    values:
+      serviceAccount: "{{ secret('GCP_CREDS') }}"
+      projectId: "{{ secret('GCP_PROJECT_ID') }}"
+      location: "{{ secret('GCP_LOCATION') }}"
+
+triggers:
+  - id: daily_schedule_binance
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "30 4 * * *"
+    recoverMissedSchedules: NONE
+
+tasks:
+  - id: branch_binance_trade_collector
+    type: io.kestra.plugin.core.flow.WorkingDirectory
+    tasks:
+      - id: extract_binance_trade_collector
+        type: io.kestra.plugin.scripts.shell.Script
+        containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+          pullPolicy: ALWAYS
+        env:
+          OUTPUT_DIR: "output_data"
+        script: |
+          mkdir -p output_data
+          python /app/batch/binance_trade_collector.py --manager iceberg
+
+      - id: validate_binance_trade
+        type: io.kestra.plugin.scripts.shell.Script
+        containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+          pullPolicy: ALWAYS
+          memory:
+            memory: "8GB"
+            memoryReservation: "2GB"
+        env:
+          OUTPUT_DIR: "output_data"
+        script: |
+          python /app/batch/data_validator.py \
+            --dataset binance_trades \
+            --file_pattern "binance_trades_*.parquet"
+
+      - id: upload_binance_trade_collector
+        type: io.kestra.plugin.scripts.shell.Script
+        containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+          pullPolicy: ALWAYS
+          memory:
+            memory: "8GB"
+            memoryReservation: "2GB"
+        inputFiles:
+          gcp-key.json: "{{ secret('GCP_CREDS') }}"
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: "gcp-key.json"
+          GCP_PROJECT_ID: "{{ secret('GCP_PROJECT_ID') }}"
+          GCP_LOCATION: "{{ secret('GCP_LOCATION') }}"
+          GCP_BUCKET_NAME: "{{ vars.gcs_bucket }}"
+          ICEBERG_WAREHOUSE: "bq://projects/{{ secret('GCP_PROJECT_ID') }}/locations/{{ secret('GCP_LOCATION') }}"
+          OUTPUT_DIR: "output_data"
+          ICEBERG_DB: "raw_crypto_batch"
+          ICEBERG_TABLE: "binance_trades_raw"
+          FILE_PATTERN: "binance_trades_*.parquet"
+          ICEBERG_PARTITION_COL: "ingestion_time"
+        script: |
+          python /app/batch/iceberg_loader.py
+
+  - id: purge_files
+    type: io.kestra.plugin.core.storage.PurgeCurrentExecutionFiles
+    description: To avoid cluttering your storage, we will remove the downloaded files

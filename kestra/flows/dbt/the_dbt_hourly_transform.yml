@@ -1,0 +1,56 @@
+id: the_dbt_hourly_transform
+namespace: crypto.data_engineering
+
+description: |
+  Hourly dbt transform after hourly snapshot ingestion.
+  Builds hourly intermediate, core marts, dashboard marts, and ML training features.
+
+triggers:
+  - id: after_the_hourly_snapshot
+    type: io.kestra.plugin.core.trigger.Flow
+    preconditions:
+      id: hourly_snapshot_success
+      flows:
+        - namespace: crypto.data_engineering
+          flowId: the_hourly_snapshot
+          states: [SUCCESS]
+
+tasks:
+  - id: dbt_hourly_transform
+    type: io.kestra.plugin.scripts.shell.Commands
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: ALWAYS
+    containerImage: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-dbt:latest
+    inputFiles:
+      gcp-key.json: "{{ secret('GCP_CREDS') }}"
+    env:
+      GOOGLE_APPLICATION_CREDENTIALS: "gcp-key.json"
+      GCP_PROJECT_ID: "{{ secret('GCP_PROJECT_ID') }}"
+      BQ_ANALYTICS_DATASET: dbt_quants_dev
+      BQ_ML_OUTPUTS_DATASET: ml_outputs
+      BQ_LOCATION: asia-southeast1
+    commands:
+      - cp gcp-key.json /app/crypto_dbt/gcp-key.json
+      - cd /app/crypto_dbt
+      - |
+        uv run dbt build \
+          --select \
+            int_funding_hourly \
+            int_liquidation_bucket_hourly \
+            int_liquidation_hourly \
+            int_options_hourly \
+            int_stablecoin_hourly \
+            fact_crypto_features_hourly \
+            mart_dashboard_kpi_latest \
+            mart_dashboard_derivatives_risk_hourly \
+            mart_dashboard_liquidation_heatmap_hourly \
+            mart_dashboard_options_risk_hourly \
+            mart_dashboard_data_freshness \
+            mart_ml_features_hourly \
+            mart_ml_labels_hourly \
+            mart_ml_training_dataset_hourly \
+            mart_ml_feature_quality_daily \
+            mart_ml_label_distribution_daily \
+            mart_ml_naive_baseline_metrics \
+          --no-partial-parse
