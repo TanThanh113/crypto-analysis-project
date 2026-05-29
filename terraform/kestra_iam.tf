@@ -11,9 +11,11 @@ locals {
     "roles/cloudsql.client", # VPC Peering
     "roles/secretmanager.secretAccessor",
     "roles/logging.logWriter",
+
     "roles/bigquery.jobUser",
     "roles/bigquery.dataViewer",
-    "roles/bigquery.dataEditor"
+    "roles/bigquery.dataEditor",
+    "roles/bigquery.readSessionUser"
   ]
 }
 
@@ -27,8 +29,15 @@ resource "google_project_iam_member" "kestra_project_roles" {
 }
 
 # Grant top privileges to the storage.
+# This is used for storing Kestra's internal data.
 resource "google_storage_bucket_iam_member" "kestra_internal_storage_object_admin" {
   bucket = google_storage_bucket.kestra_internal_storage.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.kestra_gke_sa.email}"
+}
+# This is used for storing crypto raw data.
+resource "google_storage_bucket_iam_member" "kestra_crypto_raw_bucket_object_admin" {
+  bucket = var.gcs_bucket_name
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.kestra_gke_sa.email}"
 }
