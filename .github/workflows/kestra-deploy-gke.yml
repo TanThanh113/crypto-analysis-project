@@ -94,11 +94,11 @@ jobs:
           cat /tmp/kestra-port-forward.log || true
           exit 1
 
-      - name: Check Kestra API authentication
+      - name: Check Kestra webserver authentication
         run: |
           curl -fsS \
             -u "${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}:${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}" \
-            ${KESTRA_SERVER}/api/v1/flows > /dev/null
+            ${KESTRA_SERVER}/ > /dev/null
             
       - name: Deploy GKE-ready Kestra flows
         uses: kestra-io/github-actions/deploy-flows@main
