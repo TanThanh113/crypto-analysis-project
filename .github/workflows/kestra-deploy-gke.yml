@@ -12,7 +12,6 @@ on:
   push:
     branches:
       - main
-      - infra/kestra-gke-phase1
     paths:
       - "helm/kestra/**"
       - "k8s/kestra/**"
