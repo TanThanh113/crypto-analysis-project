@@ -15,7 +15,8 @@ locals {
     "roles/iam.workloadIdentityPoolAdmin",
     "roles/iam.serviceAccountAdmin",
     "roles/compute.networkAdmin",
-    "roles/servicenetworking.networksAdmin"
+    "roles/servicenetworking.networksAdmin",
+    "roles/secretmanager.secretAccessor"
   ]
 }
 

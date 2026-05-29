@@ -1,0 +1,86 @@
+# Kestra on GKE Autopilot
+# Phase 2: Cloud SQL PostgreSQL + GCS internal storage + Workload Identity
+
+image:
+  repository: kestra/kestra
+  pullPolicy: IfNotPresent
+
+# Enable Workload Identity
+serviceAccount:
+  create: true
+  name: kestra
+  annotations:
+    iam.gke.io/gcp-service-account: "kestra-gke-sa@project-lambda-crypto.iam.gserviceaccount.com"
+
+# Hardware resource allocation
+common:
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      memory: "2Gi"
+
+  # Enter the password from the secret box.
+  extraEnv:
+    - name: KESTRA_DB_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: kestra-db-secret
+          key: KESTRA_DB_PASSWORD
+
+# Microservices
+deployments:
+  standalone:
+    enabled: false
+
+  webserver:
+    enabled: true # Enable Web UI
+
+  executor:
+    enabled: true # Turn on the command dispatcher
+
+  indexer:
+    enabled: true # Enable data indexing
+
+  scheduler:
+    enabled: true # Turn on the time scheduler (Cron)
+
+  worker:
+    enabled: true
+    workerThreads: 4 # Enable the force to run the actual task
+
+# GKE Autopilot should not use Docker-in-Docker.
+# Lock down the Docker-in-Docker feature.
+dind:
+  enabled: false
+
+service:
+  type: ClusterIP
+
+# Configure the internal storage
+configurations:
+  application:
+    kestra:
+      queue:
+        type: postgres
+
+      repository:
+        type: postgres
+
+      storage:
+        type: gcs
+        gcs:
+          bucket: "crypto-kestra-internal-storage-unique-6451"
+          project-id: "project-lambda-crypto"
+
+      environment:
+        name: "gke-production"
+
+    # Configuration for Kestra's brain storage
+    datasources:
+      postgres:
+        url: "jdbc:postgresql://10.93.0.3:5432/kestra"
+        driver-class-name: org.postgresql.Driver
+        username: "kestra"
+        password: "${KESTRA_DB_PASSWORD}"
