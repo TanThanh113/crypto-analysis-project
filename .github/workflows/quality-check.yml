@@ -52,7 +52,17 @@ jobs:
           import sys
           import yaml
 
-          paths = list(pathlib.Path("kestra/flows").rglob("*.yml")) + list(pathlib.Path("kestra/flows").rglob("*.yaml"))
+          flow_roots = [
+              pathlib.Path("kestra/flows"),
+              pathlib.Path("kestra/flows-gke"),
+          ]
+
+          paths = []
+          for root in flow_roots:
+              if root.exists():
+                  paths.extend(list(root.rglob("*.yml")))
+                  paths.extend(list(root.rglob("*.yaml")))
+
           if not paths:
               print("No Kestra YAML files found.")
               sys.exit(0)

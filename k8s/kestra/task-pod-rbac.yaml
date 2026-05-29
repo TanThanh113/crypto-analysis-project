@@ -21,11 +21,11 @@ rules:
     resources: ["pods/exec"] # pod is used to type and execute commands.
     verbs: ["get", "watch", "create"]
 
-  - apiGroups: [""]
-    resources: ["events"]
+  - apiGroups: [""] # version old
+    resources: ["events"] # Similar to a log, but with higher privileges.
     verbs: ["get", "watch", "list"]
 
-  - apiGroups: ["events.k8s.io"]
+  - apiGroups: ["events.k8s.io"] # version new
     resources: ["events"]
     verbs: ["get", "watch", "list"]
 ---

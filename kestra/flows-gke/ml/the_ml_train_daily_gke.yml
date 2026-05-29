@@ -1,0 +1,108 @@
+id: the_ml_train_daily_gke
+namespace: crypto.data_engineering
+
+description: |
+  GKE version of daily ML training.
+  Runs ML and dbt tasks as Kubernetes pods using Workload Identity.
+  No service account JSON key is required.
+  
+labels:
+  system.readOnly: "true"
+
+tasks:
+  - id: train_model
+    type: io.kestra.plugin.kubernetes.core.PodCreate
+    namespace: kestra
+    waitUntilRunning: PT10M
+    spec:
+      serviceAccountName: kestra
+      restartPolicy: Never
+      containers:
+        - name: train-model
+          image: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-ml:latest
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -lc
+            - |
+              set -e
+
+              echo "[train] Starting ML training on GKE..."
+              cd /app/ml
+
+              python train_model.py \
+                --config feature_list.yml \
+                --artifact-dir artifacts \
+                --model-choice logistic \
+                --artifact-storage both
+
+              echo "[train] ML training completed."
+          env:
+            - name: GCP_PROJECT_ID
+              value: project-lambda-crypto
+            - name: GCP_BUCKET_NAME
+              value: crypto-raw-archive-unique-6451
+            - name: BQ_ANALYTICS_DATASET
+              value: dbt_quants_dev
+            - name: BQ_ML_OUTPUTS_DATASET
+              value: ml_outputs
+            - name: BQ_LOCATION
+              value: asia-southeast1
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              memory: "2Gi"
+
+  - id: build_model_metrics_mart
+    type: io.kestra.plugin.kubernetes.core.PodCreate
+    namespace: kestra
+    waitUntilRunning: PT10M
+    spec:
+      serviceAccountName: kestra
+      restartPolicy: Never
+      containers:
+        - name: dbt-build-model-metrics
+          image: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-dbt:latest
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -lc
+            - |
+              set -e
+
+              echo "[dbt] Starting dbt model metrics build on GKE..."
+              cd /app/crypto_dbt
+
+              echo "[dbt] DBT_TARGET=${DBT_TARGET}"
+              echo "[dbt] GCP_PROJECT_ID=${GCP_PROJECT_ID}"
+              echo "[dbt] BQ_ANALYTICS_DATASET=${BQ_ANALYTICS_DATASET}"
+              echo "[dbt] BQ_ML_OUTPUTS_DATASET=${BQ_ML_OUTPUTS_DATASET}"
+              echo "[dbt] BQ_LOCATION=${BQ_LOCATION}"
+
+              uv run dbt debug
+
+              uv run dbt build \
+                --select mart_ml_model_metrics \
+                --vars '{"enable_ml_outputs_marts": true}' \
+                --no-partial-parse
+
+              echo "[dbt] dbt model metrics build completed."
+          env:
+            - name: DBT_TARGET
+              value: gke
+            - name: GCP_PROJECT_ID
+              value: project-lambda-crypto
+            - name: BQ_ANALYTICS_DATASET
+              value: dbt_quants_dev
+            - name: BQ_ML_OUTPUTS_DATASET
+              value: ml_outputs
+            - name: BQ_LOCATION
+              value: asia-southeast1
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              memory: "2Gi"

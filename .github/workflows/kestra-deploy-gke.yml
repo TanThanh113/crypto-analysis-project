@@ -1,0 +1,101 @@
+name: Deploy Kestra to GKE
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PROJECT_ID: project-lambda-crypto
+  REGION: asia-southeast1
+  CLUSTER_NAME: crypto-kestra-autopilot
+  KESTRA_NAMESPACE: kestra
+  KESTRA_SERVER: http://127.0.0.1:8080
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "helm/kestra/**"
+      - "k8s/kestra/**"
+      - "kestra/flows-gke/**"
+      - ".github/workflows/kestra-deploy-gke.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy-kestra:
+    name: Deploy Kestra Helm and flows
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_CICD_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          location: ${{ env.REGION }}
+
+      - name: Install Helm
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          helm version
+
+      - name: Check cluster access
+        run: |
+          kubectl get namespace ${KESTRA_NAMESPACE}
+          kubectl get pods -n ${KESTRA_NAMESPACE}
+
+      - name: Deploy or upgrade Kestra Helm release
+        run: |
+          helm repo add kestra https://helm.kestra.io/
+          helm repo update
+
+          helm upgrade --install kestra kestra/kestra \
+            --namespace ${KESTRA_NAMESPACE} \
+            -f helm/kestra/values-gke.yaml \
+            --wait \
+            --timeout 15m
+
+      - name: Wait for Kestra webserver
+        run: |
+          kubectl rollout status deployment/kestra-webserver \
+            -n ${KESTRA_NAMESPACE} \
+            --timeout=10m
+
+      - name: Port-forward Kestra webserver
+        run: |
+          kubectl port-forward deployment/kestra-webserver 8080:8080 -n ${KESTRA_NAMESPACE} > /tmp/kestra-port-forward.log 2>&1 &
+          echo $! > /tmp/kestra-port-forward.pid
+
+          for i in $(seq 1 30); do
+            if curl -fsS ${KESTRA_SERVER} > /dev/null; then
+              echo "Kestra is reachable."
+              exit 0
+            fi
+            echo "Waiting for Kestra..."
+            sleep 5
+          done
+
+          echo "Kestra did not become reachable."
+          cat /tmp/kestra-port-forward.log || true
+          exit 1
+
+      - name: Deploy GKE-ready Kestra flows
+        uses: kestra-io/github-actions/deploy-flows@main
+        with:
+          directory: ./kestra/flows-gke
+          server: ${{ env.KESTRA_SERVER }}
+          override: true

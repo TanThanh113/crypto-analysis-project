@@ -1,0 +1,14 @@
+# Grant permissions to the service account.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-actions-kestra-admin
+  namespace: kestra
+subjects: # Recipients of rights
+  - kind: User
+    name: github-cicd-sa@project-lambda-crypto.iam.gserviceaccount.com
+    apiGroup: rbac.authorization.k8s.io
+roleRef: # Assign permissions to objects
+  kind: ClusterRole
+  name: admin # Grant the permissions to the cluster admin role
+  apiGroup: rbac.authorization.k8s.io
