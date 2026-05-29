@@ -12,6 +12,7 @@ on:
   push:
     branches:
       - main
+      - "feature/**"
     paths:
       - "helm/kestra/**"
       - "k8s/kestra/**"
