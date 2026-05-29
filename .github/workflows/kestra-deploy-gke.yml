@@ -12,7 +12,7 @@ on:
   push:
     branches:
       - main
-      - "feature/**"
+      - infra/kestra-gke-phase1
     paths:
       - "helm/kestra/**"
       - "k8s/kestra/**"
