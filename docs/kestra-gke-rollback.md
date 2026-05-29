@@ -1,4 +1,3 @@
-```markdown
 # Kestra GKE Rollback
 
 ## Check Helm releases
@@ -36,13 +35,3 @@ curl -sFL [https://kestra.io/install.sh](https://kestra.io/install.sh) | bash
   --user "$KESTRA_USER" \
   --password "$KESTRA_PASSWORD"
 ```
-```
-
----
-
-Sau khi lưu file chuẩn xác này lại, bạn hãy chạy bộ lệnh Commit của bạn ở terminal:
-
-```bash
-git add docs/kestra-gke-rollback.md
-git commit -m "docs: add Kestra GKE rollback runbook"
-git push origin main
