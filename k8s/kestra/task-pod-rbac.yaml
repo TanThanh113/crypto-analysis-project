@@ -20,6 +20,14 @@ rules:
   - apiGroups: [""]
     resources: ["pods/exec"] # pod is used to type and execute commands.
     verbs: ["get", "watch", "create"]
+
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "watch", "list"]
+
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["get", "watch", "list"]
 ---
 # Grant permissions to the service account.
 apiVersion: rbac.authorization.k8s.io/v1

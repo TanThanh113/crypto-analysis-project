@@ -43,3 +43,29 @@ resource "google_service_account_iam_member" "kestra_workload_identity_binding" 
     google_container_cluster.kestra_autopilot
   ]
 }
+
+# --- Grant GKE Service Account the Artifact Registry Reader Role ---
+# Get the project number
+data "google_project" "current" {
+  project_id = var.project
+}
+
+# Create a list of the service accounts that can pull images from Artifact Registry
+locals {
+  gke_artifact_registry_pullers = [
+    # On the GKE Autopilot cluster, the virtual machines (nodes) running in the background, managed by Google, will bear the identity of this account.
+    "${data.google_project.current.number}-compute@developer.gserviceaccount.com",
+
+    # It handles all background tasks related to coordinating and communicating within the cluster's systems.
+    "service-${data.google_project.current.number}@container-engine-robot.iam.gserviceaccount.com"
+  ]
+}
+
+# Grant the GKE Service Account the Artifact Registry Reader Role
+resource "google_project_iam_member" "gke_artifact_registry_reader" {
+  for_each = toset(local.gke_artifact_registry_pullers)
+
+  project = var.project
+  role    = "roles/artifactregistry.reader"
+  member  = "serviceAccount:${each.value}"
+}
