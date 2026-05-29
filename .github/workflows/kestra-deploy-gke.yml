@@ -100,11 +100,18 @@ jobs:
             -u "${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}:${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}" \
             ${KESTRA_SERVER}/ > /dev/null
             
+      - name: Install kestractl
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/kestra-io/kestractl/main/install-scripts/install.sh | INSTALL_DIR='./' bash
+          ./kestractl --help
+          ./kestractl flows deploy --help
+
       - name: Deploy GKE-ready Kestra flows
-        uses: kestra-io/github-actions/deploy-flows@main
-        with:
-          directory: ./kestra/flows-gke
-          server: ${{ env.KESTRA_SERVER }}
-          override: true
-          user: ${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}
-          password: ${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}
+        env:
+          KESTRACTL_USERNAME: ${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}
+          KESTRACTL_PASSWORD: ${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}
+        run: |
+          ./kestractl flows deploy ./kestra/flows-gke \
+            --host "${KESTRA_SERVER}" \
+            --tenant main \
+            --override
