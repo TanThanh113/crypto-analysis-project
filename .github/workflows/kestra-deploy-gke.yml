@@ -98,7 +98,7 @@ jobs:
         run: |
           curl -fsS \
             -u "${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}:${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}" \
-            ${KESTRA_SERVER}/api/v1/main/flows > /dev/null
+            ${KESTRA_SERVER}/api/v1/flows > /dev/null
             
       - name: Deploy GKE-ready Kestra flows
         uses: kestra-io/github-actions/deploy-flows@main
@@ -106,5 +106,5 @@ jobs:
           directory: ./kestra/flows-gke
           server: ${{ env.KESTRA_SERVER }}
           override: true
-          user: ${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}
+          username: ${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}
           password: ${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}
