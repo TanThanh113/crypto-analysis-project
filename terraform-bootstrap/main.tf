@@ -8,16 +8,23 @@ resource "google_service_account" "terraform_sa" {
   display_name = "Terraform Builder SA"
 }
 
-resource "google_project_iam_member" "terraform_sa_editor" {
-  project = var.project
-  role    = "roles/editor"
-  member  = "serviceAccount:${google_service_account.terraform_sa.email}"
+locals {
+  terraform_sa_roles = [
+    "roles/editor",
+    "roles/resourcemanager.projectIamAdmin",
+    "roles/iam.workloadIdentityPoolAdmin",
+    "roles/iam.serviceAccountAdmin",
+    "roles/compute.networkAdmin",
+    "roles/servicenetworking.networksAdmin"
+  ]
 }
 
-resource "google_project_iam_member" "terraform_sa_iam_admin" {
-  project = var.project
-  role    = "roles/resourcemanager.projectIamAdmin"
-  member  = "serviceAccount:${google_service_account.terraform_sa.email}"
+# Cấp tất cả quyền bằng một block duy nhất
+resource "google_project_iam_member" "terraform_sa_roles" {
+  for_each = toset(local.terraform_sa_roles)
+  project  = var.project
+  role     = each.value
+  member   = "serviceAccount:${google_service_account.terraform_sa.email}"
 }
 
 resource "google_project_iam_member" "impersonate_permission" {
