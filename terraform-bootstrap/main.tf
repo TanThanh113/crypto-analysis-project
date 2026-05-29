@@ -16,7 +16,9 @@ locals {
     "roles/iam.serviceAccountAdmin",
     "roles/compute.networkAdmin",
     "roles/servicenetworking.networksAdmin",
-    "roles/secretmanager.secretAccessor"
+    "roles/secretmanager.secretAccessor",
+    "roles/container.clusterAdmin",
+    "roles/container.admin"
   ]
 }
 
