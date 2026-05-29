@@ -43,7 +43,7 @@ resource "google_iam_workload_identity_pool_provider" "github_provider" {
     "attribute.ref"        = "assertion.ref"
   }
 
-  attribute_condition = "assertion.repository == '${var.github_owner}/${var.github_repo}' && (assertion.ref == 'refs/heads/main' || assertion.ref == 'refs/heads/infra/kestra-gke-phase1')"
+  attribute_condition = "assertion.repository == '${var.github_owner}/${var.github_repo}' && assertion.ref == 'refs/heads/main'"
 }
 
 # Allow only this GitHub repo to impersonate github-cicd-sa
