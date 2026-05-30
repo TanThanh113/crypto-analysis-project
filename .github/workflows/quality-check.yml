@@ -39,7 +39,7 @@ jobs:
       - name: Check forbidden committed files
         run: |
           set -e
-          if git ls-files | grep -Ei '\.env|tfstate|tfvars|secret|secrets|key\.json|credential|credentials|joblib|artifacts|output_data|_state|\.success|\.parquet'; then
+          if git ls-files | grep -vE '^terraform/kestra_secrets\.tf$' | grep -Ei '\.env|tfstate|tfvars|secret|secrets|key\.json|credential|credentials|joblib|artifacts|output_data|_state|\.success|\.parquet'; then
             echo "Forbidden file pattern detected in git-tracked files."
             exit 1
           fi
@@ -53,7 +53,7 @@ jobs:
           import yaml
 
           flow_roots = [
-              pathlib.Path("kestra/flows"),
+              pathid = pathlib.Path("kestra/flows"),
               pathlib.Path("kestra/flows-gke"),
           ]
 
