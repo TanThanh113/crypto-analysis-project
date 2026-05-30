@@ -1,26 +1,27 @@
-id: the_dbt_hourly_transform_gke
+id: the_dbt_daily_market_transform_gke
 namespace: crypto.data_engineering
 
 labels:
   system.readOnly: "true"
 
 description: |
-  GKE hourly dbt transform after hourly snapshot ingestion.
-  Builds hourly intermediate models, dashboard marts, and ML training features.
+  GKE daily batch market transform after Binance historical data ingestion.
+  Updates historical market data, dashboard marts, and ML training dataset.
+  This is not the realtime inference path.
 
-# Enable after the_hourly_snapshot_gke is migrated and tested.
+# Enable after the_daily_snapshot_binance_gke is migrated and tested.
 # triggers:
-#   - id: after_the_hourly_snapshot_gke
+#   - id: after_daily_binance_gke
 #     type: io.kestra.plugin.core.trigger.Flow
 #     preconditions:
-#       id: hourly_snapshot_gke_success
+#       id: daily_binance_gke_success
 #       flows:
 #         - namespace: crypto.data_engineering
-#           flowId: the_hourly_snapshot_gke
+#           flowId: the_daily_snapshot_binance_gke
 #           states: [SUCCESS]
 
 tasks:
-  - id: dbt_hourly_transform
+  - id: dbt_daily_market_transform
     type: io.kestra.plugin.kubernetes.core.PodCreate
     namespace: kestra
     waitUntilRunning: PT10M
@@ -28,7 +29,7 @@ tasks:
       serviceAccountName: kestra
       restartPolicy: Never
       containers:
-        - name: dbt-hourly-transform
+        - name: dbt-daily-market-transform
           image: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-dbt:latest
           imagePullPolicy: Always
           command:
@@ -40,16 +41,15 @@ tasks:
 
               uv run dbt build \
                 --select \
-                  int_funding_hourly \
-                  int_liquidation_bucket_hourly \
-                  int_liquidation_hourly \
-                  int_options_hourly \
-                  int_stablecoin_hourly \
+                  int_market_trades_hourly \
                   fact_crypto_features_hourly \
+                  dim_symbols \
+                  dim_exchanges \
+                  dim_time \
                   mart_dashboard_kpi_latest \
-                  mart_dashboard_derivatives_risk_hourly \
-                  mart_dashboard_liquidation_heatmap_hourly \
-                  mart_dashboard_options_risk_hourly \
+                  mart_dashboard_market_overview_hourly \
+                  mart_dashboard_ai_signal_hourly \
+                  mart_dashboard_alerts_hourly \
                   mart_dashboard_data_freshness \
                   mart_ml_features_hourly \
                   mart_ml_labels_hourly \
