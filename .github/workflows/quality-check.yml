@@ -80,6 +80,19 @@ jobs:
           if failed:
               sys.exit(1)
           PY
+      
+      - name: Check GKE Kestra flows do not use Docker runner or JSON keys
+        run: |
+          set -e
+
+          if [ -d "kestra/flows-gke" ]; then
+            if grep -R "io.kestra.plugin.scripts.runner.docker.Docker\|GOOGLE_APPLICATION_CREDENTIALS\|gcp-key.json\|inputFiles:" kestra/flows-gke -n; then
+              echo "GKE flows must not use Docker runner, service-account JSON key, or inputFiles secrets."
+              exit 1
+            fi
+          fi
+
+          echo "GKE Kestra flows are clean."
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
