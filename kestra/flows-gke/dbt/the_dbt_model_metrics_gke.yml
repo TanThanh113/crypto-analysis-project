@@ -1,0 +1,50 @@
+id: the_dbt_model_metrics_gke
+namespace: crypto.data_engineering
+
+labels:
+  system.readOnly: "true"
+
+description: |
+  GKE dbt test flow.
+  Builds the ML model metrics mart using Workload Identity.
+
+tasks:
+  - id: build_model_metrics_mart
+    type: io.kestra.plugin.kubernetes.core.PodCreate
+    namespace: kestra
+    waitUntilRunning: PT10M
+    spec:
+      serviceAccountName: kestra
+      restartPolicy: Never
+      containers:
+        - name: dbt-build-model-metrics
+          image: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-dbt:latest
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -lc
+            - |
+              set -e
+              cd /app/crypto_dbt
+
+              uv run dbt build \
+                --select mart_ml_model_metrics \
+                --vars '{"enable_ml_outputs_marts": true}' \
+                --no-partial-parse
+          env:
+            - name: DBT_TARGET
+              value: gke
+            - name: GCP_PROJECT_ID
+              value: project-lambda-crypto
+            - name: BQ_ANALYTICS_DATASET
+              value: dbt_quants_dev
+            - name: BQ_ML_OUTPUTS_DATASET
+              value: ml_outputs
+            - name: BQ_LOCATION
+              value: asia-southeast1
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              memory: "2Gi"
