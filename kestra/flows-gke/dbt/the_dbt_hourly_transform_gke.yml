@@ -1,0 +1,78 @@
+id: the_dbt_hourly_transform_gke
+namespace: crypto.data_engineering
+
+labels:
+  system.readOnly: "true"
+
+description: |
+  GKE hourly dbt transformation flow.
+  Runs hourly market, feature, dashboard, and ML feature marts with Workload Identity.
+
+# Keep trigger disabled during migration.
+# triggers:
+#   - id: after_hourly_snapshot
+#     type: io.kestra.plugin.core.trigger.Flow
+#     preconditions:
+#       id: hourly_snapshot_success
+#       flows:
+#         - namespace: crypto.data_engineering
+#           flowId: the_hourly_snapshot_gke
+#           states: [SUCCESS]
+
+tasks:
+  - id: dbt_hourly_build
+    type: io.kestra.plugin.kubernetes.core.PodCreate
+    namespace: kestra
+    waitUntilRunning: PT10M
+    spec:
+      serviceAccountName: kestra
+      restartPolicy: Never
+      containers:
+        - name: dbt-hourly-build
+          image: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-dbt:latest
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -lc
+            - |
+              set -e
+              cd /app/crypto_dbt
+
+              uv run dbt build \
+                --select \
+                  int_funding_hourly \
+                  int_options_hourly \
+                  int_liquidation_hourly \
+                  int_stablecoin_hourly \
+                  int_social_sentiment_hourly \
+                  fact_crypto_features_hourly \
+                  dim_symbols \
+                  dim_exchanges \
+                  dim_time \
+                  mart_dashboard_kpi_latest \
+                  mart_dashboard_market_overview_hourly \
+                  mart_dashboard_ai_signal_hourly \
+                  mart_dashboard_alerts_hourly \
+                  mart_dashboard_data_freshness \
+                  mart_ml_features_hourly \
+                  mart_ml_prediction_input_hourly \
+                  mart_ml_prediction_input_latest \
+                --vars '{"enable_ml_outputs_marts": true}' \
+                --no-partial-parse
+          env:
+            - name: DBT_TARGET
+              value: gke
+            - name: GCP_PROJECT_ID
+              value: project-lambda-crypto
+            - name: BQ_ANALYTICS_DATASET
+              value: dbt_quants_dev
+            - name: BQ_ML_OUTPUTS_DATASET
+              value: ml_outputs
+            - name: BQ_LOCATION
+              value: asia-southeast1
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              memory: "4Gi"
