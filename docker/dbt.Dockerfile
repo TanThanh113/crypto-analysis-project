@@ -28,6 +28,7 @@ RUN uv sync --locked
 COPY crypto_dbt ./crypto_dbt
 
 WORKDIR /app/crypto_dbt
+RUN uv run dbt deps
 
 # Create dbt output folders
 RUN mkdir -p target logs
