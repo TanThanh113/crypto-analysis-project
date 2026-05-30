@@ -53,7 +53,7 @@ jobs:
           import yaml
 
           flow_roots = [
-              pathid = pathlib.Path("kestra/flows"),
+              pathlib.Path("kestra/flows"),
               pathlib.Path("kestra/flows-gke"),
           ]
 
