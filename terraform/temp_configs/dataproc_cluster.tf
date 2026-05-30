@@ -10,11 +10,11 @@ resource "google_dataproc_cluster" "crypto_cluster" {
 
   cluster_config {
     gce_cluster_config {
-      tags               = ["flink-node"]
-      subnetwork         = google_compute_subnetwork.crypto_subnet.id
-      service_account    = google_service_account.flink_sa.email
-      internal_ip_only   = true
-      
+      tags             = ["flink-node"]
+      subnetwork       = google_compute_subnetwork.crypto_subnet.id
+      service_account  = google_service_account.flink_sa.email
+      internal_ip_only = true
+
       service_account_scopes = ["https://www.googleapis.com/auth/cloud-platform"]
     }
 
@@ -28,18 +28,18 @@ resource "google_dataproc_cluster" "crypto_cluster" {
 
     software_config {
       image_version = "2.2-debian12"
-      
+
       override_properties = {
         "dataproc:dataproc.allow.zero.workers"        = "true"
         "dataproc:dataproc.conscrypt.provider.enable" = "false"
 
-        "flink:taskmanager.memory.process.size"        = "20480m"
-        "flink:jobmanager.memory.process.size"         = "2048m"
-        "flink:taskmanager.memory.task.off-heap.size"  = "6144m"
-        "flink:taskmanager.memory.managed.fraction"    = "0.1"
-        
+        "flink:taskmanager.memory.process.size"       = "20480m"
+        "flink:jobmanager.memory.process.size"        = "2048m"
+        "flink:taskmanager.memory.task.off-heap.size" = "6144m"
+        "flink:taskmanager.memory.managed.fraction"   = "0.1"
+
         "flink:env.java.opts.all" = "--add-opens=java.base/sun.security.ssl=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED"
-        
+
         "flink:taskmanager.numberOfTaskSlots" = "4"
       }
       optional_components = ["FLINK"]
@@ -47,10 +47,10 @@ resource "google_dataproc_cluster" "crypto_cluster" {
 
     master_config {
       num_instances = 1
-      machine_type  = "e2-standard-8" 
+      machine_type  = "e2-standard-8"
       disk_config {
         boot_disk_type    = "pd-standard"
-        boot_disk_size_gb = 250       
+        boot_disk_size_gb = 250
       }
     }
 
@@ -59,7 +59,7 @@ resource "google_dataproc_cluster" "crypto_cluster" {
     }
 
     lifecycle_config {
-      idle_delete_ttl = "3600s" 
+      idle_delete_ttl = "3600s"
     }
   }
 
