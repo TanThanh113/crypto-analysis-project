@@ -1,0 +1,81 @@
+id: the_daily_snapshot_etf_gke
+namespace: crypto.data_engineering
+
+labels:
+  system.readOnly: "true"
+
+description: |
+  GKE daily ETF snapshot.
+  Runs extract, validate, and Iceberg upload in one Kubernetes pod using Workload Identity.
+
+# Enable after manual GKE test passes.
+# triggers:
+#   - id: daily_schedule_etf_gke
+#     type: io.kestra.plugin.core.trigger.Schedule
+#     cron: "30 22 * * *"
+#     recoverMissedSchedules: NONE
+
+tasks:
+  - id: etf_snapshot
+    type: io.kestra.plugin.kubernetes.core.PodCreate
+    namespace: kestra
+    waitUntilRunning: PT15M
+    spec:
+      serviceAccountName: kestra
+      restartPolicy: Never
+      containers:
+        - name: etf-snapshot
+          image: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -lc
+            - |
+              set -e
+
+              cd /app
+              mkdir -p output_data
+
+              echo "[etf] Extracting Tiingo ETF data..."
+              python /app/batch/tiingo_extractor.py --type etf --manager iceberg
+
+              echo "[etf] Validating ETF data..."
+              python /app/batch/data_validator.py \
+                --dataset etf_indicators_raw \
+                --file_pattern "tiingo_etf_raw_*.parquet"
+
+              echo "[etf] Uploading ETF data to Iceberg..."
+              python /app/batch/iceberg_loader.py
+
+              echo "[etf] Daily ETF snapshot completed."
+          env:
+            - name: OUTPUT_DIR
+              value: output_data
+            - name: GX_PROGRESS_BARS
+              value: "false"
+            - name: TIINGO_API_KEY
+              value: "{{ secret('TIINGO_API_KEY') }}"
+
+            - name: GCP_PROJECT_ID
+              value: project-lambda-crypto
+            - name: GCP_BUCKET_NAME
+              value: crypto-raw-archive-unique-6451
+            - name: GCP_LOCATION
+              value: asia-southeast1
+
+            - name: ICEBERG_WAREHOUSE
+              value: bq://projects/project-lambda-crypto/locations/asia-southeast1
+            - name: ICEBERG_DB
+              value: raw_crypto_batch
+            - name: ICEBERG_TABLE
+              value: etf_indicators_raw
+            - name: FILE_PATTERN
+              value: tiingo_etf_raw_*.parquet
+            - name: ICEBERG_PARTITION_COL
+              value: ingestion_time
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              memory: "2Gi"

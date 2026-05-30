@@ -1,0 +1,79 @@
+id: the_daily_snapshot_macro_gke
+namespace: crypto.data_engineering
+
+labels:
+  system.readOnly: "true"
+
+description: |
+  GKE daily macro snapshot.
+  Runs extract, validate, and Iceberg upload in one Kubernetes pod using Workload Identity.
+
+# Enable after manual GKE test passes.
+# triggers:
+#   - id: daily_schedule_macro_gke
+#     type: io.kestra.plugin.core.trigger.Schedule
+#     cron: "0 22 * * *"
+#     recoverMissedSchedules: NONE
+
+tasks:
+  - id: macro_snapshot
+    type: io.kestra.plugin.kubernetes.core.PodCreate
+    namespace: kestra
+    waitUntilRunning: PT15M
+    spec:
+      serviceAccountName: kestra
+      restartPolicy: Never
+      containers:
+        - name: macro-snapshot
+          image: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -lc
+            - |
+              set -e
+
+              cd /app
+              mkdir -p output_data
+
+              echo "[macro] Extracting Tiingo macro data..."
+              python /app/batch/tiingo_extractor.py --type macro --manager iceberg
+
+              echo "[macro] Validating macro data..."
+              python /app/batch/data_validator.py \
+                --dataset macro_indicators_raw \
+                --file_pattern "tiingo_macro_raw_*.parquet"
+
+              echo "[macro] Uploading macro data to Iceberg..."
+              python /app/batch/iceberg_loader.py
+
+              echo "[macro] Daily macro snapshot completed."
+          env:
+            - name: OUTPUT_DIR
+              value: output_data
+            - name: TIINGO_API_KEY
+              value: "{{ secret('TIINGO_API_KEY') }}"
+
+            - name: GCP_PROJECT_ID
+              value: project-lambda-crypto
+            - name: GCP_BUCKET_NAME
+              value: crypto-raw-archive-unique-6451
+            - name: GCP_LOCATION
+              value: asia-southeast1
+
+            - name: ICEBERG_WAREHOUSE
+              value: bq://projects/project-lambda-crypto/locations/asia-southeast1
+            - name: ICEBERG_DB
+              value: raw_crypto_batch
+            - name: ICEBERG_TABLE
+              value: macro_indicators_raw
+            - name: FILE_PATTERN
+              value: tiingo_macro_raw_*.parquet
+            - name: ICEBERG_PARTITION_COL
+              value: ingestion_time
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              memory: "2Gi"

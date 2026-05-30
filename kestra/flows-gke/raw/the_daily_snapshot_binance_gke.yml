@@ -1,0 +1,77 @@
+id: the_daily_snapshot_binance_gke
+namespace: crypto.data_engineering
+
+labels:
+  system.readOnly: "true"
+
+description: |
+  GKE daily Binance snapshot.
+  Runs extract, validate, and Iceberg upload in one Kubernetes pod using Workload Identity.
+
+# Enable after manual GKE test passes.
+# triggers:
+#   - id: daily_schedule_binance_gke
+#     type: io.kestra.plugin.core.trigger.Schedule
+#     cron: "30 4 * * *"
+#     recoverMissedSchedules: NONE
+
+tasks:
+  - id: binance_trade_snapshot
+    type: io.kestra.plugin.kubernetes.core.PodCreate
+    namespace: kestra
+    waitUntilRunning: PT15M
+    spec:
+      serviceAccountName: kestra
+      restartPolicy: Never
+      containers:
+        - name: binance-trade-snapshot
+          image: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -lc
+            - |
+              set -e
+
+              cd /app
+              mkdir -p output_data
+
+              echo "[binance] Extracting Binance trades..."
+              python /app/batch/binance_trade_collector.py --manager iceberg
+
+              echo "[binance] Validating Binance trades..."
+              python /app/batch/data_validator.py \
+                --dataset binance_trades \
+                --file_pattern "binance_trades_*.parquet"
+
+              echo "[binance] Uploading Binance trades to Iceberg..."
+              python /app/batch/iceberg_loader.py
+
+              echo "[binance] Daily Binance snapshot completed."
+          env:
+            - name: OUTPUT_DIR
+              value: output_data
+
+            - name: GCP_PROJECT_ID
+              value: project-lambda-crypto
+            - name: GCP_BUCKET_NAME
+              value: crypto-raw-archive-unique-6451
+            - name: GCP_LOCATION
+              value: asia-southeast1
+
+            - name: ICEBERG_WAREHOUSE
+              value: bq://projects/project-lambda-crypto/locations/asia-southeast1
+            - name: ICEBERG_DB
+              value: raw_crypto_batch
+            - name: ICEBERG_TABLE
+              value: binance_trades_raw
+            - name: FILE_PATTERN
+              value: binance_trades_*.parquet
+            - name: ICEBERG_PARTITION_COL
+              value: ingestion_time
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              memory: "8Gi"
