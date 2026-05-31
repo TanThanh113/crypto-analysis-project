@@ -1,0 +1,163 @@
+id: the_intraday_shift_gke
+namespace: crypto.data_engineering
+
+labels:
+  system.readOnly: "true"
+
+description: |
+  GKE intraday raw snapshot.
+  Runs all intraday extract and validation steps first.
+  Upload starts only after all extract and validation steps pass.
+  Uses Workload Identity and Secret Manager CSI.
+
+# Enable after manual GKE test passes.
+# triggers:
+#   - id: intraday_schedule_gke
+#     type: io.kestra.plugin.core.trigger.Schedule
+#     cron: "0 0,7,13,19 * * *"
+#     recoverMissedSchedules: NONE
+
+tasks:
+  - id: intraday_shift_atomic
+    type: io.kestra.plugin.kubernetes.core.PodCreate
+    namespace: kestra
+    waitUntilRunning: PT25M
+    spec:
+      serviceAccountName: kestra
+      restartPolicy: Never
+
+      containers:
+        - name: intraday-shift
+          image: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -lc
+            - |
+              set -eu
+
+              cd /app
+              mkdir -p output_data
+
+              echo "[intraday] Python path:"
+              which python
+              python --version
+
+              echo "[intraday] UV check:"
+              uv run python -c "import pandas, pyarrow; print('uv env ok')"
+
+              export COINALYZE_API_KEY="$(cat /var/secrets/COINALYZE_API_KEY)"
+              export COINGECKO_API_KEY="$(cat /var/secrets/COINGECKO_API_KEY)"
+              export ARKHAM_API_KEY="$(cat /var/secrets/ARKHAM_API_KEY)"
+              export API_ID="$(cat /var/secrets/API_ID)"
+              export API_HASH="$(cat /var/secrets/API_HASH)"
+              export TELEGRAM_SESSION_STRING="$(cat /var/secrets/TELEGRAM_SESSION_STRING)"
+
+              test -n "${COINALYZE_API_KEY}"
+              test -n "${COINGECKO_API_KEY}"
+              test -n "${ARKHAM_API_KEY}"
+              test -n "${API_ID}"
+              test -n "${API_HASH}"
+              test -n "${TELEGRAM_SESSION_STRING}"
+
+              echo "[intraday] ===== PHASE 1: EXTRACT ALL ====="
+
+              echo "[intraday][reddit] Extracting..."
+              uv run python /app/batch/reddit_sentiment.py --manager iceberg
+
+              echo "[intraday][telegram] Extracting..."
+              uv run python /app/batch/telegram_sentiment.py --manager iceberg
+
+              echo "[intraday][exchange_reserve] Extracting..."
+              uv run python /app/batch/exchange_reserves_collector.py --manager iceberg
+
+              echo "[intraday] ===== PHASE 2: VALIDATE ALL ====="
+
+              echo "[intraday][reddit_raw] Validating..."
+              uv run python /app/batch/data_validator.py \
+                --dataset reddit_raw \
+                --file_pattern "reddit_raw_*.parquet"
+
+              echo "[intraday][telegram_raw] Validating..."
+              uv run python /app/batch/data_validator.py \
+                --dataset telegram_raw \
+                --file_pattern "telegram_raw_*.parquet"
+
+              echo "[intraday][exchange_reserve] Validating..."
+              uv run python /app/batch/data_validator.py \
+                --dataset exchange_reserve \
+                --file_pattern "exchange_reserve_*.parquet"
+
+              echo "[intraday] All validations passed. Starting uploads."
+
+              echo "[intraday] ===== PHASE 3: UPLOAD ALL ====="
+
+              echo "[intraday][reddit_raw] Uploading..."
+              ICEBERG_DB=raw_crypto_batch \
+              ICEBERG_TABLE=reddit_sentiment_raw \
+              FILE_PATTERN="reddit_raw_*.parquet" \
+              ICEBERG_PARTITION_COL=ingestion_time \
+              uv run python /app/batch/iceberg_loader.py
+
+              echo "[intraday][reddit_summary] Uploading..."
+              ICEBERG_DB=summary_crypto_batch \
+              ICEBERG_TABLE=reddit_sentiment_summary \
+              FILE_PATTERN="reddit_summary_*.parquet" \
+              ICEBERG_PARTITION_COL=ingestion_time \
+              uv run python /app/batch/iceberg_loader.py
+
+              echo "[intraday][telegram_raw] Uploading..."
+              ICEBERG_DB=raw_crypto_batch \
+              ICEBERG_TABLE=telegram_sentiment_raw \
+              FILE_PATTERN="telegram_raw_*.parquet" \
+              ICEBERG_PARTITION_COL=ingestion_time \
+              uv run python /app/batch/iceberg_loader.py
+
+              echo "[intraday][telegram_summary] Uploading..."
+              ICEBERG_DB=summary_crypto_batch \
+              ICEBERG_TABLE=telegram_sentiment_summary \
+              FILE_PATTERN="telegram_summary_*.parquet" \
+              ICEBERG_PARTITION_COL=ingestion_time \
+              uv run python /app/batch/iceberg_loader.py
+
+              echo "[intraday][exchange_reserve] Uploading..."
+              ICEBERG_DB=raw_crypto_batch \
+              ICEBERG_TABLE=exchange_reserve_raw \
+              FILE_PATTERN="exchange_reserve_*.parquet" \
+              ICEBERG_PARTITION_COL=ingestion_time \
+              uv run python /app/batch/iceberg_loader.py
+
+              echo "[intraday] Intraday shift completed."
+          env:
+            - name: OUTPUT_DIR
+              value: output_data
+            - name: GX_PROGRESS_BARS
+              value: "false"
+
+            - name: GCP_PROJECT_ID
+              value: project-lambda-crypto
+            - name: GCP_BUCKET_NAME
+              value: crypto-raw-archive-unique-6451
+            - name: GCP_LOCATION
+              value: asia-southeast1
+
+            - name: ICEBERG_WAREHOUSE
+              value: bq://projects/project-lambda-crypto/locations/asia-southeast1
+          volumeMounts:
+            - name: gcp-secret-manager-secrets
+              mountPath: /var/secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              memory: "8Gi"
+
+      volumes:
+        - name: gcp-secret-manager-secrets
+          csi:
+            driver: secrets-store-gke.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: crypto-batch-secrets-gke

@@ -1,0 +1,153 @@
+id: the_hourly_snapshot_gke
+namespace: crypto.data_engineering
+
+labels:
+  system.readOnly: "true"
+
+description: |
+  GKE hourly raw snapshot.
+  Runs all hourly extract and validation steps first.
+  Upload starts only after all extract and validation steps pass.
+  Uses Workload Identity and Secret Manager CSI.
+
+# Enable after manual GKE test passes.
+# triggers:
+#   - id: hourly_schedule_gke
+#     type: io.kestra.plugin.core.trigger.Schedule
+#     cron: "0 * * * *"
+#     recoverMissedSchedules: NONE
+
+tasks:
+  - id: hourly_snapshot_atomic
+    type: io.kestra.plugin.kubernetes.core.PodCreate
+    namespace: kestra
+    waitUntilRunning: PT20M
+    spec:
+      serviceAccountName: kestra
+      restartPolicy: Never
+
+      containers:
+        - name: hourly-snapshot
+          image: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -lc
+            - |
+              set -eu
+
+              cd /app
+              mkdir -p output_data
+
+              echo "[hourly] Python path:"
+              which python
+              python --version
+
+              echo "[hourly] UV check:"
+              uv run python -c "import pandas, pyarrow; print('uv env ok')"
+
+              export COINALYZE_API_KEY="$(cat /var/secrets/COINALYZE_API_KEY)"
+              test -n "${COINALYZE_API_KEY}"
+
+              echo "[hourly] ===== PHASE 1: EXTRACT ALL ====="
+
+              echo "[hourly][liquidation] Extracting..."
+              uv run python /app/batch/liquidation_heatmap.py --manager iceberg
+
+              echo "[hourly][funding] Extracting..."
+              uv run python /app/batch/funding_basis_collector.py --manager iceberg
+
+              echo "[hourly][options] Extracting..."
+              uv run python /app/batch/deribit_options_collector.py --manager iceberg
+
+              echo "[hourly][stablecoin] Extracting..."
+              uv run python /app/batch/stablecoin_supply_collector.py --manager iceberg
+
+              echo "[hourly] ===== PHASE 2: VALIDATE ALL ====="
+
+              echo "[hourly][liquidation] Validating..."
+              uv run python /app/batch/data_validator.py \
+                --dataset liquidation_map \
+                --file_pattern "liquidation_map_*.parquet"
+
+              echo "[hourly][funding] Validating..."
+              uv run python /app/batch/data_validator.py \
+                --dataset funding_rates \
+                --file_pattern "funding_rates_*.parquet"
+
+              echo "[hourly][options] Validating..."
+              uv run python /app/batch/data_validator.py \
+                --dataset deribit_options \
+                --file_pattern "deribit_options_*.parquet"
+
+              echo "[hourly][stablecoin] Validating..."
+              uv run python /app/batch/data_validator.py \
+                --dataset stablecoin_supply \
+                --file_pattern "stablecoin_supply_*.parquet"
+
+              echo "[hourly] All validations passed. Starting uploads."
+
+              echo "[hourly] ===== PHASE 3: UPLOAD ALL ====="
+
+              echo "[hourly][liquidation] Uploading..."
+              ICEBERG_DB=raw_crypto_batch \
+              ICEBERG_TABLE=liquidation_raw \
+              FILE_PATTERN="liquidation_map_*.parquet" \
+              ICEBERG_PARTITION_COL=ingestion_time \
+              uv run python /app/batch/iceberg_loader.py
+
+              echo "[hourly][funding] Uploading..."
+              ICEBERG_DB=raw_crypto_batch \
+              ICEBERG_TABLE=funding_raw \
+              FILE_PATTERN="funding_rates_*.parquet" \
+              ICEBERG_PARTITION_COL=ingestion_time \
+              uv run python /app/batch/iceberg_loader.py
+
+              echo "[hourly][options] Uploading..."
+              ICEBERG_DB=raw_crypto_batch \
+              ICEBERG_TABLE=options_raw \
+              FILE_PATTERN="deribit_options_*.parquet" \
+              ICEBERG_PARTITION_COL=ingestion_time \
+              uv run python /app/batch/iceberg_loader.py
+
+              echo "[hourly][stablecoin] Uploading..."
+              ICEBERG_DB=raw_crypto_batch \
+              ICEBERG_TABLE=stablecoin_supply_raw \
+              FILE_PATTERN="stablecoin_supply_*.parquet" \
+              ICEBERG_PARTITION_COL=ingestion_time \
+              uv run python /app/batch/iceberg_loader.py
+
+              echo "[hourly] Hourly snapshot completed."
+          env:
+            - name: OUTPUT_DIR
+              value: output_data
+            - name: GX_PROGRESS_BARS
+              value: "false"
+
+            - name: GCP_PROJECT_ID
+              value: project-lambda-crypto
+            - name: GCP_BUCKET_NAME
+              value: crypto-raw-archive-unique-6451
+            - name: GCP_LOCATION
+              value: asia-southeast1
+
+            - name: ICEBERG_WAREHOUSE
+              value: bq://projects/project-lambda-crypto/locations/asia-southeast1
+          volumeMounts:
+            - name: gcp-secret-manager-secrets
+              mountPath: /var/secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              memory: "8Gi"
+
+      volumes:
+        - name: gcp-secret-manager-secrets
+          csi:
+            driver: secrets-store-gke.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: crypto-batch-secrets-gke
