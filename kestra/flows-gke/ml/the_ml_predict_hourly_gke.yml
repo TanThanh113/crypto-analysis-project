@@ -5,19 +5,23 @@ labels:
   system.readOnly: "true"
 
 description: |
-  GKE hourly ML prediction flow.
-  Downloads latest model artifact from GCS and writes predictions to BigQuery.
-  Keep trigger disabled until streaming produces rows in mart_ml_prediction_input_latest.
+  GKE hourly ML inference.
+  Safe no-op when mart_ml_prediction_input_latest has 0 rows.
+  Uses Workload Identity and downloads the latest model artifact from GCS.
 
+# Enable only after streaming producer is running reliably.
 # triggers:
-#   - id: hourly_prediction_schedule
-#     type: io.kestra.plugin.core.trigger.Schedule
-#     cron: "5 * * * *"
-#     timezone: Asia/Ho_Chi_Minh
-#     recoverMissedSchedules: NONE
+#   - id: after_streaming_hourly_transform_gke
+#     type: io.kestra.plugin.core.trigger.Flow
+#     preconditions:
+#       id: streaming_hourly_gke_success
+#       flows:
+#         - namespace: crypto.data_engineering
+#           flowId: the_streaming_hourly_transform_gke
+#           states: [SUCCESS]
 
 tasks:
-  - id: predict_latest
+  - id: run_predict_latest_safe
     type: io.kestra.plugin.kubernetes.core.PodCreate
     namespace: kestra
     waitUntilRunning: PT10M
@@ -25,7 +29,7 @@ tasks:
       serviceAccountName: kestra
       restartPolicy: Never
       containers:
-        - name: predict-latest
+        - name: ml-predict-latest
           image: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-ml:latest
           imagePullPolicy: Always
           command:
@@ -33,39 +37,40 @@ tasks:
             - -lc
             - |
               set -e
+
               cd /app/ml
 
               echo "[predict] Checking prediction input row count..."
 
-              ROW_COUNT=$(python - <<'PY'
+              ROW_COUNT="$(python - <<'PY'
+              import os
               from google.cloud import bigquery
 
-              project_id = "project-lambda-crypto"
-              table_id = "project-lambda-crypto.dbt_quants_dev.mart_ml_prediction_input_latest"
+              project_id = os.environ["GCP_PROJECT_ID"]
+              dataset = os.environ["BQ_ANALYTICS_DATASET"]
 
               client = bigquery.Client(project=project_id)
               query = f"""
-              SELECT COUNT(1) AS row_count
-              FROM `{table_id}`
+              SELECT COUNT(*) AS row_count
+              FROM `{project_id}.{dataset}.mart_ml_prediction_input_latest`
               """
-              row = list(client.query(query).result())[0]
-              print(row.row_count)
+              rows = list(client.query(query).result())
+              print(rows[0]["row_count"])
               PY
-              )
+              )"
 
-              echo "[predict] Prediction input row count: ${ROW_COUNT}"
+              echo "[predict] mart_ml_prediction_input_latest rows=${ROW_COUNT}"
 
               if [ "${ROW_COUNT}" = "0" ]; then
-                echo "[predict] No prediction input rows found. Skipping prediction safely."
+                echo "[predict] No prediction input rows. Skipping predict_latest.py safely."
                 exit 0
               fi
 
-              echo "[predict] Input rows found. Running prediction..."
+              echo "[predict] Running predict_latest.py..."
 
               python predict_latest.py \
                 --config feature_list.yml \
-                --artifact-dir artifacts \
-                --artifact-storage gcs
+                --artifact-dir artifacts
 
               echo "[predict] Prediction completed."
           env:
@@ -102,12 +107,15 @@ tasks:
             - -lc
             - |
               set -e
+
               cd /app/crypto_dbt
 
               uv run dbt build \
-                --select mart_ml_predictions_latest \
+                --select mart_ml_predictions_latest mart_dashboard_ai_signal_hourly mart_dashboard_kpi_latest \
                 --vars '{"enable_ml_outputs_marts": true}' \
                 --no-partial-parse
+
+              echo "[predict] Prediction marts refreshed."
           env:
             - name: DBT_TARGET
               value: gke
