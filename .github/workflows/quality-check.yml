@@ -90,29 +90,14 @@ jobs:
               sys.exit(1)
           PY
       
-      - name: Check GKE Kestra flows do not use Docker runner or JSON keys
+      # Production repository guard
+      - name: Production repository guard
         run: |
-          set -e
+          python scripts/repo_guard.py
 
-          if [ -d "kestra/flows-gke" ]; then
-            if grep -R "io.kestra.plugin.scripts.runner.docker.Docker\|GOOGLE_APPLICATION_CREDENTIALS\|gcp-key.json\|inputFiles:" kestra/flows-gke -n; then
-              echo "GKE flows must not use Docker runner, service-account JSON key, or inputFiles secrets."
-              exit 1
-            fi
-          fi
-
-          echo "GKE Kestra flows are clean."
-
-      - name: Check Kestra deploy workflow only deploys GKE flows
+      - name: Python syntax check - repo scripts
         run: |
-          set -e
-
-          if grep -R "kestractl flows deploy ./kestra/flows " .github/workflows -n; then
-            echo "Deploy workflow must deploy ./kestra/flows-gke only, not legacy ./kestra/flows."
-            exit 1
-          fi
-
-          echo "Kestra deploy workflow targets flows-gke only."
+          python -m compileall scripts
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3

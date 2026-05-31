@@ -1,0 +1,11 @@
+min_rows: 1
+
+required_columns:
+  - ingestion_time
+  - exchange
+  - symbol
+
+not_null:
+  - ingestion_time
+  - exchange
+  - symbol

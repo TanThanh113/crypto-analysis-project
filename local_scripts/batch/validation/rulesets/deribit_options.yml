@@ -1,0 +1,9 @@
+min_rows: 1
+
+required_columns:
+  - ingestion_time
+  - underlying
+
+not_null:
+  - ingestion_time
+  - underlying
