@@ -34,24 +34,31 @@ tasks:
             - -lc
             - |
               set -e
-
+          
               cd /app
               mkdir -p output_data
-
+          
+              echo "[etf] Python path:"
+              which python
+              python --version
+          
+              echo "[etf] UV check:"
+              uv run python -c "import requests; print('requests ok')"
+          
               export TIINGO_API_KEY="$(cat /var/secrets/TIINGO_API_KEY)"
               test -n "${TIINGO_API_KEY}"
-
+          
               echo "[etf] Extracting Tiingo ETF data..."
-              python /app/batch/tiingo_extractor.py --type etf --manager iceberg
-
+              uv run python /app/batch/tiingo_extractor.py --type etf --manager iceberg
+          
               echo "[etf] Validating ETF data..."
-              python /app/batch/data_validator.py \
+              uv run python /app/batch/data_validator.py \
                 --dataset etf_indicators_raw \
                 --file_pattern "tiingo_etf_raw_*.parquet"
-
+          
               echo "[etf] Uploading ETF data to Iceberg..."
-              python /app/batch/iceberg_loader.py
-
+              uv run python /app/batch/iceberg_loader.py
+          
               echo "[etf] Daily ETF snapshot completed."
           env:
             - name: OUTPUT_DIR

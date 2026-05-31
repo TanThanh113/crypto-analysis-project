@@ -34,24 +34,31 @@ tasks:
             - -lc
             - |
               set -e
-
+          
               cd /app
               mkdir -p output_data
-
+          
+              echo "[macro] Python path:"
+              which python
+              python --version
+          
+              echo "[macro] UV check:"
+              uv run python -c "import requests; print('requests ok')"
+          
               export TIINGO_API_KEY="$(cat /var/secrets/TIINGO_API_KEY)"
               test -n "${TIINGO_API_KEY}"
-
+          
               echo "[macro] Extracting Tiingo macro data..."
-              python /app/batch/tiingo_extractor.py --type macro --manager iceberg
-
+              uv run python /app/batch/tiingo_extractor.py --type macro --manager iceberg
+          
               echo "[macro] Validating macro data..."
-              python /app/batch/data_validator.py \
+              uv run python /app/batch/data_validator.py \
                 --dataset macro_indicators_raw \
                 --file_pattern "tiingo_macro_raw_*.parquet"
-
+          
               echo "[macro] Uploading macro data to Iceberg..."
-              python /app/batch/iceberg_loader.py
-
+              uv run python /app/batch/iceberg_loader.py
+          
               echo "[macro] Daily macro snapshot completed."
           env:
             - name: OUTPUT_DIR
