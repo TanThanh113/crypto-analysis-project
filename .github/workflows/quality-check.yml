@@ -19,7 +19,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Basic secret scan
         run: |
@@ -43,7 +43,6 @@ jobs:
           WHITELIST=(
             "^terraform/kestra_secrets\.tf$"
             "^k8s/kestra/secret-provider-class-batch\.yml$"
-            # "^thư_mục/file_bí_mật_khác\.yml$"
           )
 
           WHITELIST_REGEX=$(IFS="|"; echo "${WHITELIST[*]}")
@@ -103,6 +102,17 @@ jobs:
           fi
 
           echo "GKE Kestra flows are clean."
+
+      - name: Check Kestra deploy workflow only deploys GKE flows
+        run: |
+          set -e
+
+          if grep -R "kestractl flows deploy ./kestra/flows " .github/workflows -n; then
+            echo "Deploy workflow must deploy ./kestra/flows-gke only, not legacy ./kestra/flows."
+            exit 1
+          fi
+
+          echo "Kestra deploy workflow targets flows-gke only."
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3

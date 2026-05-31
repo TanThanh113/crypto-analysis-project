@@ -1,8 +1,16 @@
 name: Build and Push Docker Images
 
-# Activated when these files change.
 on:
   push:
+    branches:
+      - main
+    paths:
+      - "local_scripts/**"
+      - "dbt_transform/**"
+      - "ml/**"
+      - "docker/**"
+      - ".github/workflows/docker-build-push.yml"
+  pull_request:
     branches:
       - main
     paths:
@@ -24,16 +32,14 @@ jobs:
     name: Build and push Docker images
     runs-on: ubuntu-latest
 
-    # Declare permissions for the GitHub virtual machine.
     permissions:
       contents: read
-      id-token: write # Create OIDC tokens (WIP) for the GitHub virtual machine.
+      id-token: write
 
     steps:
-      - name: Checkout repository # Use GitHub's official action to clone the project code.
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v5
 
-      # Filter out the files that have been changed.
       - name: Check for changed paths
         uses: dorny/paths-filter@v3
         id: filter
@@ -52,27 +58,22 @@ jobs:
               - 'docker/ml.Dockerfile'
               - '.github/workflows/docker-build-push.yml'
 
-      # Censorship to gain access to the cloud
       - name: Authenticate to Google Cloud
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_CICD_SERVICE_ACCOUNT }}
 
-      # install gcloud command
       - name: Set up gcloud
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: google-github-actions/setup-gcloud@v2
 
-      # Perform a "login" of the virtual machine's Docker system to the Google Cloud Artifact Registry repository.
       - name: Configure Docker for Artifact Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
 
-      # Build the docker image
-      # 1. Docker build
-      # 2. Check the image
-      # 3. Push the image 
-      
       # --- BATCH COMPONENT ---
       - name: Build batch image
         if: steps.filter.outputs.batch == 'true'
@@ -89,7 +90,7 @@ jobs:
           docker run --rm ${IMAGE_BASE}/crypto-batch:${{ github.sha }} python --version
 
       - name: Push batch image
-        if: steps.filter.outputs.batch == 'true'
+        if: steps.filter.outputs.batch == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           docker push ${IMAGE_BASE}/crypto-batch:${{ github.sha }}
           docker push ${IMAGE_BASE}/crypto-batch:latest
@@ -110,7 +111,7 @@ jobs:
           docker run --rm ${IMAGE_BASE}/crypto-dbt:${{ github.sha }} uv run dbt --version
 
       - name: Push dbt image
-        if: steps.filter.outputs.dbt == 'true'
+        if: steps.filter.outputs.dbt == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           docker push ${IMAGE_BASE}/crypto-dbt:${{ github.sha }}
           docker push ${IMAGE_BASE}/crypto-dbt:latest
@@ -131,7 +132,7 @@ jobs:
           docker run --rm ${IMAGE_BASE}/crypto-ml:${{ github.sha }} python --version
 
       - name: Push ML image
-        if: steps.filter.outputs.ml == 'true'
+        if: steps.filter.outputs.ml == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           docker push ${IMAGE_BASE}/crypto-ml:${{ github.sha }}
           docker push ${IMAGE_BASE}/crypto-ml:latest
