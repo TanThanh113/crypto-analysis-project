@@ -324,8 +324,18 @@ async def main():
     run_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     
     # Connect Telethon
-    client = TelegramClient(StringSession(session_str), int(api_id), api_hash)
-    await client.start()
+    try:
+        safe_api_id = int(api_id)
+    except ValueError:
+        logging.error("❌ CRITICAL ERROR: API_ID is not a valid integer! Please check Google Secret Manager.")
+        sys.exit(1)
+        
+    try:
+        client = TelegramClient(StringSession(session_str), safe_api_id, api_hash)
+        await client.start()
+    except Exception as e:
+        logging.error("❌ CRITICAL ERROR: Failed to start TelegramClient! Please check API_HASH or Session String in Secret Manager.")
+        sys.exit(1)
     
     # Extremely fast multi-threaded scraping
     logging.info("🚀 Start a multi-threaded ETL process with Data Enrichment...")

@@ -28,8 +28,8 @@ resource "google_secret_manager_secret_version" "kestra_db_password" {
 # Use a loop to insert the API keys
 locals {
   kestra_runtime_secret_names = [
-    "kestra-api-id",
-    "kestra-api-hash",
+    "kestra-telegram-api-id",
+    "kestra-telegram-api-hash",
     "kestra-telegram-session-string",
     "kestra-tiingo-api-key",
     "kestra-coinalyze-api-key",
