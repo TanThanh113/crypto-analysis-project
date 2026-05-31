@@ -7,6 +7,7 @@ labels:
 description: |
   GKE daily Binance snapshot.
   Runs extract, validate, and Iceberg upload in one Kubernetes pod using Workload Identity.
+  Python scripts are executed through uv to use the project virtual environment.
 
 # Enable after manual GKE test passes.
 # triggers:
@@ -19,7 +20,7 @@ tasks:
   - id: binance_trade_snapshot
     type: io.kestra.plugin.kubernetes.core.PodCreate
     namespace: kestra
-    waitUntilRunning: PT15M
+    waitUntilRunning: PT20M
     spec:
       serviceAccountName: kestra
       restartPolicy: Never
@@ -36,16 +37,23 @@ tasks:
               cd /app
               mkdir -p output_data
 
+              echo "[binance] Python path:"
+              which python
+              python --version
+
+              echo "[binance] UV check:"
+              uv run python -c "import pandas, pyarrow; print('uv env ok')"
+
               echo "[binance] Extracting Binance trades..."
-              python /app/batch/binance_trade_collector.py --manager iceberg
+              uv run python /app/batch/binance_trade_collector.py --manager iceberg
 
               echo "[binance] Validating Binance trades..."
-              python /app/batch/data_validator.py \
+              uv run python /app/batch/data_validator.py \
                 --dataset binance_trades \
                 --file_pattern "binance_trades_*.parquet"
 
               echo "[binance] Uploading Binance trades to Iceberg..."
-              python /app/batch/iceberg_loader.py
+              uv run python /app/batch/iceberg_loader.py
 
               echo "[binance] Daily Binance snapshot completed."
           env:
