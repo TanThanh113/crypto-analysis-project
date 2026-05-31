@@ -41,6 +41,10 @@ resource "google_container_cluster" "kestra_autopilot" {
     }
   }
 
+  secret_manager_config {
+    enabled = true
+  }
+
   depends_on = [
     google_project_service.kestra_required_services
   ]

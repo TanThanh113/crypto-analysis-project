@@ -60,3 +60,17 @@ resource "google_secret_manager_secret" "kestra_runtime_secrets" {
     google_project_service.kestra_required_services
   ]
 }
+
+resource "google_secret_manager_secret_iam_member" "kestra_runtime_secrets_accessor" {
+  for_each = google_secret_manager_secret.kestra_runtime_secrets
+
+  project   = var.project
+  secret_id = each.value.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+
+  member = "principal://iam.googleapis.com/projects/${data.google_project.current.number}/locations/global/workloadIdentityPools/${var.project}.svc.id.goog/subject/ns/${var.kestra_namespace}/sa/${var.kestra_kubernetes_service_account}"
+
+  depends_on = [
+    google_container_cluster.kestra_autopilot
+  ]
+}

@@ -18,11 +18,11 @@ locals {
     "roles/servicenetworking.networksAdmin",
     "roles/secretmanager.secretAccessor",
     "roles/container.clusterAdmin",
-    "roles/container.admin"
+    "roles/container.admin",
+    "roles/secretmanager.admin"
   ]
 }
 
-# Cấp tất cả quyền bằng một block duy nhất
 resource "google_project_iam_member" "terraform_sa_roles" {
   for_each = toset(local.terraform_sa_roles)
   project  = var.project

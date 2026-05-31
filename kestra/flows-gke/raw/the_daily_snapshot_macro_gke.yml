@@ -7,6 +7,7 @@ labels:
 description: |
   GKE daily macro snapshot.
   Runs extract, validate, and Iceberg upload in one Kubernetes pod using Workload Identity.
+  TIINGO_API_KEY is mounted from Google Secret Manager through the GKE Secret Manager CSI add-on.
 
 # Enable after manual GKE test passes.
 # triggers:
@@ -23,6 +24,7 @@ tasks:
     spec:
       serviceAccountName: kestra
       restartPolicy: Never
+
       containers:
         - name: macro-snapshot
           image: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
@@ -35,6 +37,9 @@ tasks:
 
               cd /app
               mkdir -p output_data
+
+              export TIINGO_API_KEY="$(cat /var/secrets/TIINGO_API_KEY)"
+              test -n "${TIINGO_API_KEY}"
 
               echo "[macro] Extracting Tiingo macro data..."
               python /app/batch/tiingo_extractor.py --type macro --manager iceberg
@@ -51,8 +56,6 @@ tasks:
           env:
             - name: OUTPUT_DIR
               value: output_data
-            - name: TIINGO_API_KEY
-              value: "{{ secret('TIINGO_API_KEY') }}"
 
             - name: GCP_PROJECT_ID
               value: project-lambda-crypto
@@ -71,9 +74,21 @@ tasks:
               value: tiingo_macro_raw_*.parquet
             - name: ICEBERG_PARTITION_COL
               value: ingestion_time
+          volumeMounts:
+            - name: gcp-secret-manager-secrets
+              mountPath: /var/secrets
+              readOnly: true
           resources:
             requests:
               cpu: "500m"
               memory: "1Gi"
             limits:
               memory: "2Gi"
+
+      volumes:
+        - name: gcp-secret-manager-secrets
+          csi:
+            driver: secrets-store-gke.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: crypto-batch-secrets-gke
