@@ -39,6 +39,40 @@ tasks:
               cd /app
               mkdir -p output_data
 
+              read_secret() {
+                tr -d '\r\n' < "/var/secrets/$1"
+              }
+
+              require_files() {
+                PATTERN="$1"
+                LABEL="$2"
+
+                COUNT=$(find output_data -type f -name "$PATTERN" | wc -l | tr -d ' ')
+
+                if [ "$COUNT" = "0" ]; then
+                  echo "[fatal] Missing required output for ${LABEL}: ${PATTERN}"
+                  echo "[fatal] Current output_data files:"
+                  find output_data -maxdepth 5 -type f -print || true
+                  exit 1
+                fi
+
+                echo "[check] ${LABEL}: found ${COUNT} file(s)."
+              }
+
+              upload_iceberg() {
+                DB="$1"
+                TABLE="$2"
+                PATTERN="$3"
+
+                echo "[upload] ${DB}.${TABLE} from ${PATTERN}"
+
+                ICEBERG_DB="${DB}" \
+                ICEBERG_TABLE="${TABLE}" \
+                FILE_PATTERN="${PATTERN}" \
+                ICEBERG_PARTITION_COL=ingestion_time \
+                uv run python /app/batch/iceberg_loader.py
+              }
+
               echo "[intraday] Python path:"
               which python
               python --version
@@ -46,12 +80,12 @@ tasks:
               echo "[intraday] UV check:"
               uv run python -c "import pandas, pyarrow; print('uv env ok')"
 
-              export COINALYZE_API_KEY="$(cat /var/secrets/COINALYZE_API_KEY)"
-              export COINGECKO_API_KEY="$(cat /var/secrets/COINGECKO_API_KEY)"
-              export ARKHAM_API_KEY="$(cat /var/secrets/ARKHAM_API_KEY)"
-              export API_ID="$(cat /var/secrets/API_ID)"
-              export API_HASH="$(cat /var/secrets/API_HASH)"
-              export TELEGRAM_SESSION_STRING="$(cat /var/secrets/TELEGRAM_SESSION_STRING)"
+              export COINALYZE_API_KEY="$(read_secret COINALYZE_API_KEY)"
+              export COINGECKO_API_KEY="$(read_secret COINGECKO_API_KEY)"
+              export ARKHAM_API_KEY="$(read_secret ARKHAM_API_KEY)"
+              export API_ID="$(read_secret API_ID)"
+              export API_HASH="$(read_secret API_HASH)"
+              export TELEGRAM_SESSION_STRING="$(read_secret TELEGRAM_SESSION_STRING)"
 
               test -n "${COINALYZE_API_KEY}"
               test -n "${COINGECKO_API_KEY}"
@@ -60,16 +94,21 @@ tasks:
               test -n "${API_HASH}"
               test -n "${TELEGRAM_SESSION_STRING}"
 
-              echo "[intraday] ===== PHASE 1: EXTRACT ALL ====="
+              echo "[intraday] ===== PHASE 1: EXTRACT + ASSERT OUTPUT ====="
 
               echo "[intraday][reddit] Extracting..."
               uv run python /app/batch/reddit_sentiment.py --manager iceberg
+              require_files "reddit_raw_*.parquet" "reddit raw"
+              require_files "reddit_summary_*.parquet" "reddit summary"
 
               echo "[intraday][telegram] Extracting..."
               uv run python /app/batch/telegram_sentiment.py --manager iceberg
+              require_files "telegram_raw_*.parquet" "telegram raw"
+              require_files "telegram_summary_*.parquet" "telegram summary"
 
               echo "[intraday][exchange_reserve] Extracting..."
               uv run python /app/batch/exchange_reserves_collector.py --manager iceberg
+              require_files "exchange_reserve_*.parquet" "exchange reserve"
 
               echo "[intraday] ===== PHASE 2: VALIDATE ALL ====="
 
@@ -88,44 +127,17 @@ tasks:
                 --dataset exchange_reserve \
                 --file_pattern "exchange_reserve_*.parquet"
 
-              echo "[intraday] All validations passed. Starting uploads."
+              echo "[intraday] All extract and validation checks passed. Starting uploads."
 
               echo "[intraday] ===== PHASE 3: UPLOAD ALL ====="
 
-              echo "[intraday][reddit_raw] Uploading..."
-              ICEBERG_DB=raw_crypto_batch \
-              ICEBERG_TABLE=reddit_sentiment_raw \
-              FILE_PATTERN="reddit_raw_*.parquet" \
-              ICEBERG_PARTITION_COL=ingestion_time \
-              uv run python /app/batch/iceberg_loader.py
+              upload_iceberg raw_crypto_batch reddit_sentiment_raw "reddit_raw_*.parquet"
+              upload_iceberg summary_crypto_batch reddit_sentiment_summary "reddit_summary_*.parquet"
 
-              echo "[intraday][reddit_summary] Uploading..."
-              ICEBERG_DB=summary_crypto_batch \
-              ICEBERG_TABLE=reddit_sentiment_summary \
-              FILE_PATTERN="reddit_summary_*.parquet" \
-              ICEBERG_PARTITION_COL=ingestion_time \
-              uv run python /app/batch/iceberg_loader.py
+              upload_iceberg raw_crypto_batch telegram_sentiment_raw "telegram_raw_*.parquet"
+              upload_iceberg summary_crypto_batch telegram_sentiment_summary "telegram_summary_*.parquet"
 
-              echo "[intraday][telegram_raw] Uploading..."
-              ICEBERG_DB=raw_crypto_batch \
-              ICEBERG_TABLE=telegram_sentiment_raw \
-              FILE_PATTERN="telegram_raw_*.parquet" \
-              ICEBERG_PARTITION_COL=ingestion_time \
-              uv run python /app/batch/iceberg_loader.py
-
-              echo "[intraday][telegram_summary] Uploading..."
-              ICEBERG_DB=summary_crypto_batch \
-              ICEBERG_TABLE=telegram_sentiment_summary \
-              FILE_PATTERN="telegram_summary_*.parquet" \
-              ICEBERG_PARTITION_COL=ingestion_time \
-              uv run python /app/batch/iceberg_loader.py
-
-              echo "[intraday][exchange_reserve] Uploading..."
-              ICEBERG_DB=raw_crypto_batch \
-              ICEBERG_TABLE=exchange_reserve_raw \
-              FILE_PATTERN="exchange_reserve_*.parquet" \
-              ICEBERG_PARTITION_COL=ingestion_time \
-              uv run python /app/batch/iceberg_loader.py
+              upload_iceberg raw_crypto_batch exchange_reserve_raw "exchange_reserve_*.parquet"
 
               echo "[intraday] Intraday shift completed."
           env:
