@@ -10,11 +10,11 @@ description: |
   TIINGO_API_KEY is mounted from Google Secret Manager through the GKE Secret Manager CSI add-on.
 
 # Enable after manual GKE test passes.
-# triggers:
-#   - id: daily_schedule_macro_gke
-#     type: io.kestra.plugin.core.trigger.Schedule
-#     cron: "0 22 * * *"
-#     recoverMissedSchedules: NONE
+triggers:
+  - id: daily_schedule_macro_gke
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 22 * * *"
+    recoverMissedSchedules: NONE
 
 tasks:
   - id: macro_snapshot

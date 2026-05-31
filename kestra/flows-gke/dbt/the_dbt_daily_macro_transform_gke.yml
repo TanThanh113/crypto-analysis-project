@@ -9,15 +9,15 @@ description: |
   Runs as a Kubernetes pod using Workload Identity.
 
 # Enable after the_daily_snapshot_macro_gke is migrated and tested.
-# triggers:
-#   - id: after_daily_macro_gke
-#     type: io.kestra.plugin.core.trigger.Flow
-#     preconditions:
-#       id: daily_macro_gke_success
-#       flows:
-#         - namespace: crypto.data_engineering
-#           flowId: the_daily_snapshot_macro_gke
-#           states: [SUCCESS]
+triggers:
+  - id: after_daily_macro_gke
+    type: io.kestra.plugin.core.trigger.Flow
+    preconditions:
+      id: daily_macro_gke_success
+      flows:
+        - namespace: crypto.data_engineering
+          flowId: the_daily_snapshot_macro_gke
+          states: [SUCCESS]
 
 tasks:
   - id: dbt_daily_macro_transform

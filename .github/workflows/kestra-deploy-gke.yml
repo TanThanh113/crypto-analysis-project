@@ -32,6 +32,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Check for changed paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            helm_infra:
+              - 'helm/kestra/**'
+              - 'k8s/kestra/**'
+              - '.github/workflows/kestra-deploy-gke.yml'
+            kestra_flows:
+              - 'kestra/flows-gke/**'
+              - '.github/workflows/kestra-deploy-gke.yml'
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -48,17 +61,23 @@ jobs:
           cluster_name: ${{ env.CLUSTER_NAME }}
           location: ${{ env.REGION }}
 
+      # Case 1: INFRASTRUCTURE DEPLOYMENT (Run only if you modify the helm/ or k8s/ directory)
       - name: Install Helm
+        if: steps.filter.outputs.helm_infra == 'true'
         run: |
           curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
           helm version
 
+      # Check if the K8s is working properly.
       - name: Check cluster access
+        if: steps.filter.outputs.helm_infra == 'true'
         run: |
           kubectl get namespace ${KESTRA_NAMESPACE}
           kubectl get pods -n ${KESTRA_NAMESPACE}
 
+      # Load the Kestra chart repository, read your resources configuration file values-gke.yaml, and issue a system upgrade command in GKE.
       - name: Deploy or upgrade Kestra Helm release
+        if: steps.filter.outputs.helm_infra == 'true'
         run: |
           helm repo add kestra https://helm.kestra.io/
           helm repo update
@@ -69,17 +88,22 @@ jobs:
             --wait \
             --timeout 15m
 
+      # Check if the Kestra webserver is ready.
       - name: Wait for Kestra webserver
+        if: steps.filter.outputs.helm_infra == 'true'
         run: |
           kubectl rollout status deployment/kestra-webserver \
             -n ${KESTRA_NAMESPACE} \
             --timeout=10m
 
+      # Case 2: DEPLOY DATA FLOW (Only run if the kestra/flows-gke/ directory has been modified)
       - name: Port-forward Kestra webserver
+        if: steps.filter.outputs.kestra_flows == 'true'
         run: |
           kubectl port-forward deployment/kestra-webserver 8080:8080 -n ${KESTRA_NAMESPACE} > /tmp/kestra-port-forward.log 2>&1 &
           echo $! > /tmp/kestra-port-forward.pid
 
+          # Run a health check loop up to 30 times, with a 5-second interval between each check.
           for i in $(seq 1 30); do
             if curl -fsS ${KESTRA_SERVER} > /dev/null; then
               echo "Kestra is reachable."
@@ -94,18 +118,21 @@ jobs:
           exit 1
 
       - name: Check Kestra webserver authentication
+        if: steps.filter.outputs.kestra_flows == 'true'
         run: |
           curl -fsS \
             -u "${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}:${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}" \
             ${KESTRA_SERVER}/ > /dev/null
-            
+      # Download and install the main Kestractl control toolkit.
       - name: Install kestractl
+        if: steps.filter.outputs.kestra_flows == 'true'
         run: |
           curl -fsSL https://raw.githubusercontent.com/kestra-io/kestractl/main/install-scripts/install.sh | INSTALL_DIR='./' bash
           ./kestractl --help
           ./kestractl flows deploy --help
 
       - name: Deploy GKE-ready Kestra flows
+        if: steps.filter.outputs.kestra_flows == 'true'
         env:
           KESTRACTL_USERNAME: ${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}
           KESTRACTL_PASSWORD: ${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}

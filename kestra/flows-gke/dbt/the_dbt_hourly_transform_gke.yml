@@ -9,15 +9,15 @@ description: |
   Builds hourly intermediate models, dashboard marts, and ML training features.
 
 # Enable after the_hourly_snapshot_gke is migrated and tested.
-# triggers:
-#   - id: after_the_hourly_snapshot_gke
-#     type: io.kestra.plugin.core.trigger.Flow
-#     preconditions:
-#       id: hourly_snapshot_gke_success
-#       flows:
-#         - namespace: crypto.data_engineering
-#           flowId: the_hourly_snapshot_gke
-#           states: [SUCCESS]
+triggers:
+  - id: after_the_hourly_snapshot_gke
+    type: io.kestra.plugin.core.trigger.Flow
+    preconditions:
+      id: hourly_snapshot_gke_success
+      flows:
+        - namespace: crypto.data_engineering
+          flowId: the_hourly_snapshot_gke
+          states: [SUCCESS]
 
 tasks:
   - id: dbt_hourly_transform
