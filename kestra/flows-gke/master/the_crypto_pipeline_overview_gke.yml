@@ -1,0 +1,174 @@
+id: the_crypto_pipeline_overview_gke
+namespace: crypto.data_engineering
+
+labels:
+  system.readOnly: "true"
+
+description: |
+  GKE master overview flow for demo and production topology visualization.
+  This flow calls only root/entrypoint flows.
+  Downstream dbt flows are triggered automatically by Flow triggers to avoid duplicate dbt runs.
+
+inputs:
+  - id: run_hourly_branch
+    type: BOOLEAN
+    defaults: true
+    description: Run hourly raw snapshot. dbt hourly transform is triggered automatically.
+
+  - id: run_intraday_branch
+    type: BOOLEAN
+    defaults: true
+    description: Run intraday raw snapshot. dbt intraday transform is triggered automatically.
+
+  - id: run_daily_market_branch
+    type: BOOLEAN
+    defaults: false
+    description: Run daily Binance market snapshot. Heavy branch, disabled by default.
+
+  - id: run_macro_branch
+    type: BOOLEAN
+    defaults: false
+    description: Run daily macro snapshot. dbt macro transform is triggered automatically.
+
+  - id: run_etf_branch
+    type: BOOLEAN
+    defaults: false
+    description: Run daily ETF snapshot. dbt ETF transform is triggered automatically.
+
+  - id: run_streaming_transform
+    type: BOOLEAN
+    defaults: false
+    description: Run streaming hourly dbt transform. Enable only when streaming data is available.
+
+  - id: run_ml_predict
+    type: BOOLEAN
+    defaults: false
+    description: Run hourly ML prediction safe flow. Enable after streaming prediction input is available.
+
+  - id: run_ml_train
+    type: BOOLEAN
+    defaults: false
+    description: Run daily ML training manually. Normally triggered after daily market transform.
+
+tasks:
+  - id: overview_start
+    type: io.kestra.plugin.core.log.Log
+    message: |
+      Starting GKE crypto pipeline overview.
+
+      Production topology:
+      the_hourly_snapshot_gke
+        -> the_dbt_hourly_transform_gke
+
+      the_intraday_shift_gke
+        -> the_dbt_intraday_transform_gke
+
+      the_daily_snapshot_binance_gke
+        -> the_dbt_daily_market_transform_gke
+        -> optional the_ml_train_daily_gke
+
+      the_daily_snapshot_macro_gke
+        -> the_dbt_daily_macro_transform_gke
+
+      the_daily_snapshot_etf_gke
+        -> the_dbt_daily_etf_transform_gke
+
+      the_streaming_hourly_transform_gke
+        -> optional the_ml_predict_hourly_gke
+
+  - id: hourly_branch
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ inputs.run_hourly_branch }}"
+    then:
+      - id: run_the_hourly_snapshot_gke
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_hourly_snapshot_gke
+        wait: true
+        transmitFailed: true
+
+  - id: intraday_branch
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ inputs.run_intraday_branch }}"
+    then:
+      - id: run_the_intraday_shift_gke
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_intraday_shift_gke
+        wait: true
+        transmitFailed: true
+
+  - id: daily_market_branch
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ inputs.run_daily_market_branch }}"
+    then:
+      - id: run_the_daily_snapshot_binance_gke
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_daily_snapshot_binance_gke
+        wait: true
+        transmitFailed: true
+
+  - id: macro_branch
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ inputs.run_macro_branch }}"
+    then:
+      - id: run_the_daily_snapshot_macro_gke
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_daily_snapshot_macro_gke
+        wait: true
+        transmitFailed: true
+
+  - id: etf_branch
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ inputs.run_etf_branch }}"
+    then:
+      - id: run_the_daily_snapshot_etf_gke
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_daily_snapshot_etf_gke
+        wait: true
+        transmitFailed: true
+
+  - id: streaming_branch
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ inputs.run_streaming_transform }}"
+    then:
+      - id: run_the_streaming_hourly_transform_gke
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_streaming_hourly_transform_gke
+        wait: true
+        transmitFailed: true
+
+  - id: ml_predict_branch
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ inputs.run_ml_predict }}"
+    then:
+      - id: run_the_ml_predict_hourly_gke
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_ml_predict_hourly_gke
+        wait: true
+        transmitFailed: true
+
+  - id: ml_train_branch
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ inputs.run_ml_train }}"
+    then:
+      - id: run_the_ml_train_daily_gke
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: crypto.data_engineering
+        flowId: the_ml_train_daily_gke
+        wait: true
+        transmitFailed: true
+
+  - id: overview_done
+    type: io.kestra.plugin.core.log.Log
+    message: |
+      GKE crypto pipeline overview finished.
+
+      Note:
+      Raw root flows trigger their dbt downstream flows automatically.
+      This overview intentionally avoids calling dbt flows directly to prevent duplicate dbt executions.
