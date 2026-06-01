@@ -1,0 +1,8 @@
+table: mart_dashboard_kpi_latest
+suite_name: dashboard_kpi_latest_audit
+severity: critical
+limit: 1000
+
+row_count:
+  min: 1
+  max: 1000

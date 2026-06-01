@@ -1,0 +1,16 @@
+table: mart_ml_prediction_input_latest
+suite_name: ml_prediction_input_latest_audit
+severity: warning
+limit: 100
+
+row_count:
+  min: 1
+  max: 100
+
+not_null:
+  - hour_ts
+  - symbol
+
+accepted_values:
+  - column: symbol
+    values: ["BTC", "ETH"]

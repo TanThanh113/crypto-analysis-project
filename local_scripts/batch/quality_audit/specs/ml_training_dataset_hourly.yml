@@ -1,0 +1,21 @@
+table: mart_ml_training_dataset_hourly
+suite_name: ml_training_dataset_hourly_audit
+severity: critical
+
+sql: |
+  SELECT *
+  FROM `{project_id}.{analytics_dataset}.mart_ml_training_dataset_hourly`
+  ORDER BY hour_ts DESC
+  LIMIT 5000
+
+row_count:
+  min: 100
+  max: 5000
+
+not_null:
+  - hour_ts
+  - symbol
+
+accepted_values:
+  - column: symbol
+    values: ["BTC", "ETH"]
