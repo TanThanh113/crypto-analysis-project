@@ -184,11 +184,11 @@ EOF
 # 
 
 resource "google_bigquery_table" "data_quality_audit_results" {
-  project    = var.project
-  dataset_id = google_bigquery_dataset.ml_outputs.dataset_id
-  table_id   = "data_quality_audit_results"
+  project             = var.project
+  dataset_id          = google_bigquery_dataset.ml_outputs.dataset_id
+  table_id            = "data_quality_audit_results"
   deletion_protection = false
-  
+
   description = "This table contains a history of data quality audits from Great Expectations (GE Audit)."
 
   time_partitioning {
