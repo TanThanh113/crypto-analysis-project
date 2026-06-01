@@ -37,13 +37,24 @@ resource "google_iam_workload_identity_pool_provider" "github_provider" {
   }
 
   attribute_mapping = {
-    "google.subject"       = "assertion.sub"
-    "attribute.actor"      = "assertion.actor"
-    "attribute.repository" = "assertion.repository"
-    "attribute.ref"        = "assertion.ref"
+    "google.subject"             = "assertion.sub"
+    "attribute.actor"            = "assertion.actor"
+    "attribute.repository"       = "assertion.repository"
+    "attribute.repository_owner" = "assertion.repository_owner"
+    "attribute.event_name"       = "assertion.event_name"
+    "attribute.ref"              = "assertion.ref"
+    "attribute.workflow_ref"     = "assertion.workflow_ref"
   }
 
-  attribute_condition = "assertion.repository == '${var.github_owner}/${var.github_repo}' && assertion.ref == 'refs/heads/main'"
+  attribute_condition = <<EOT
+assertion.repository == "TanThanh113/crypto-analysis-project" &&
+assertion.repository_owner == "TanThanh113" &&
+(
+  assertion.event_name == "push" ||
+  assertion.event_name == "pull_request" ||
+  assertion.event_name == "workflow_dispatch"
+)
+EOT
 }
 
 # Allow only this GitHub repo to impersonate github-cicd-sa
