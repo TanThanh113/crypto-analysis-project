@@ -38,7 +38,10 @@ locals {
 
     "kestra-gcp-project-id",
     "kestra-gcp-bucket-name",
-    "kestra-gcp-location"
+    "kestra-gcp-location",
+
+    "kestra-basic-auth-username",
+    "kestra-basic-auth-password"
   ]
 }
 
