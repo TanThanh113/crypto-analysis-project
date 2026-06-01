@@ -1,0 +1,68 @@
+id: the_ge_quality_audit_daily_gke
+namespace: crypto.data_engineering
+
+labels:
+  system.readOnly: "true"
+
+description: |
+  Daily Great Expectations audit for curated marts and ML tables.
+  This is not raw ingestion validation.
+  It writes audit results to ml_outputs.data_quality_audit_results.
+
+# Enable after manual test passes.
+# triggers:
+#   - id: after_dbt_daily_market_transform_gke
+#     type: io.kestra.plugin.core.trigger.Flow
+#     preconditions:
+#       id: dbt_daily_market_gke_success
+#       flows:
+#         - namespace: crypto.data_engineering
+#           flowId: the_dbt_daily_market_transform_gke
+#           states: [SUCCESS]
+
+tasks:
+  - id: run_ge_quality_audit
+    type: io.kestra.plugin.kubernetes.core.PodCreate
+    namespace: kestra
+    waitUntilRunning: PT10M
+    spec:
+      serviceAccountName: kestra
+      restartPolicy: Never
+      containers:
+        - name: ge-quality-audit
+          image: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -lc
+            - |
+              set -e
+
+              cd /app
+
+              echo "[ge-audit] Python path:"
+              which python
+              python --version
+
+              echo "[ge-audit] GE check:"
+              uv run python -c "import great_expectations as gx; print(gx.__version__)"
+
+              echo "[ge-audit] Running GE mart quality audit..."
+              uv run python /app/batch/gx_mart_quality_audit.py --fail-on-critical
+
+              echo "[ge-audit] GE mart quality audit completed."
+          env:
+            - name: GCP_PROJECT_ID
+              value: project-lambda-crypto
+            - name: BQ_ANALYTICS_DATASET
+              value: dbt_quants_dev
+            - name: BQ_ML_OUTPUTS_DATASET
+              value: ml_outputs
+            - name: BQ_LOCATION
+              value: asia-southeast1
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              memory: "2Gi"

@@ -180,3 +180,35 @@ resource "google_bigquery_table" "model_metrics" {
 ]
 EOF
 }
+
+# 
+
+resource "google_bigquery_table" "data_quality_audit_results" {
+  project    = var.project
+  dataset_id = google_bigquery_dataset.ml_outputs.dataset_id
+  table_id   = "data_quality_audit_results"
+  deletion_protection = false
+  
+  description = "This table contains a history of data quality audits from Great Expectations (GE Audit)."
+
+  time_partitioning {
+    type  = "DAY"
+    field = "audit_ts"
+  }
+
+  clustering = ["table_name", "severity"]
+
+  schema = <<EOF
+[
+  {"name": "audit_ts", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "Audit run time"},
+  {"name": "project_id", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "table_name", "type": "STRING", "mode": "REQUIRED", "description": "Table name is being reviewed."},
+  {"name": "suite_name", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "expectation_type", "type": "STRING", "mode": "NULLABLE", "description": "The type of GE rule that was run"},
+  {"name": "success", "type": "BOOLEAN", "mode": "REQUIRED", "description": "Pass or Fail"},
+  {"name": "severity", "type": "STRING", "mode": "NULLABLE", "description": "Severity level (critical/warning)"},
+  {"name": "result_json", "type": "STRING", "mode": "NULLABLE", "description": "Details of the result from GE"},
+  {"name": "expectation_json", "type": "STRING", "mode": "NULLABLE", "description": "Details of the rule configuration"}
+]
+EOF
+}
