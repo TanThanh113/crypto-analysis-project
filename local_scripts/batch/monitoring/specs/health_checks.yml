@@ -1,0 +1,39 @@
+checks:
+  - id: dashboard_data_freshness
+    type: data_freshness_mart
+    severity: critical
+    dataset: dbt_quants_dev
+    table: mart_dashboard_data_freshness
+    max_bad_rows: 0
+    max_age_hours: 48
+
+  - id: latest_ge_quality_audit
+    type: ge_latest_audit
+    severity: critical
+    dataset: ml_outputs
+    table: data_quality_audit_results
+    recent_hours: 48
+    max_failed_critical: 0
+
+  - id: model_metrics_available
+    type: table_non_empty
+    severity: critical
+    dataset: dbt_quants_dev
+    table: mart_ml_model_metrics
+    min_rows: 1
+
+  - id: training_dataset_available
+    type: table_non_empty
+    severity: critical
+    dataset: dbt_quants_dev
+    table: mart_ml_training_dataset_hourly
+    min_rows: 100
+
+  - id: prediction_freshness
+    type: prediction_freshness
+    severity: warning
+    dataset: ml_outputs
+    table: model_predictions
+    timestamp_column: predicted_at
+    max_age_hours: 6
+    allow_missing_table: true

@@ -1,0 +1,66 @@
+id: the_pr_quality_monitoring_test_gke
+namespace: crypto.data_engineering
+
+labels:
+  system.readOnly: "true"
+
+description: |
+  PR quality and monitoring test.
+  Uses PR preview crypto-batch image.
+  Tests GE audit and pipeline health check code before merging to main.
+
+inputs:
+  - id: image_tag
+    type: STRING
+    defaults: latest
+    description: Docker image tag to test, for example pr-123.
+
+variables:
+  image_base: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker
+
+tasks:
+  - id: test_quality_and_monitoring
+    type: io.kestra.plugin.kubernetes.core.PodCreate
+    namespace: kestra
+    waitUntilRunning: PT10M
+    spec:
+      serviceAccountName: kestra
+      restartPolicy: Never
+      containers:
+        - name: pr-quality-monitoring-test
+          image: "{{ vars.image_base }}/crypto-batch:{{ inputs.image_tag }}"
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -lc
+            - |
+              set -e
+
+              cd /app
+
+              echo "[pr-quality] Testing image tag: {{ inputs.image_tag }}"
+              uv run python /app/batch/gx_mart_quality_audit.py --help
+              uv run python /app/batch/pipeline_health_check.py --help
+
+              echo "[pr-quality] Running GE audit without fail-on-critical..."
+              uv run python /app/batch/gx_mart_quality_audit.py
+
+              echo "[pr-quality] Running pipeline health check without fail-on-critical..."
+              uv run python /app/batch/pipeline_health_check.py
+
+              echo "[pr-quality] PR quality and monitoring test completed."
+          env:
+            - name: GCP_PROJECT_ID
+              value: project-lambda-crypto
+            - name: BQ_ANALYTICS_DATASET
+              value: dbt_quants_dev
+            - name: BQ_ML_OUTPUTS_DATASET
+              value: ml_outputs
+            - name: BQ_LOCATION
+              value: asia-southeast1
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              memory: "2Gi"
