@@ -1,0 +1,84 @@
+id: the_pr_dbt_test_gke
+namespace: crypto.data_engineering
+
+labels:
+  system.readOnly: "true"
+
+description: |
+  PR dbt smoke/integration test.
+  Uses PR preview crypto-dbt image.
+  Runs dbt debug, parse, and compile only.
+  Does not build or write BigQuery models.
+
+inputs:
+  - id: image_tag
+    type: STRING
+    defaults: latest
+    description: Docker image tag to test, for example pr-123.
+
+variables:
+  image_base: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker
+
+tasks:
+  - id: test_dbt_preview_image
+    type: io.kestra.plugin.kubernetes.core.PodCreate
+    namespace: kestra
+    waitUntilRunning: PT10M
+    spec:
+      serviceAccountName: kestra
+      restartPolicy: Never
+
+      containers:
+        - name: pr-dbt-test
+          image: "{{ vars.image_base }}/crypto-dbt:{{ inputs.image_tag }}"
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -lc
+            - |
+              set -e
+
+              cd /app/crypto_dbt
+
+              echo "[pr-dbt] Testing image tag: {{ inputs.image_tag }}"
+
+              export DBT_TARGET=gke
+              export GCP_PROJECT_ID=project-lambda-crypto
+              export BQ_ANALYTICS_DATASET=dbt_quants_dev
+              export BQ_ML_OUTPUTS_DATASET=ml_outputs
+              export BQ_LOCATION=asia-southeast1
+
+              uv run dbt --version
+              uv run dbt debug
+              uv run dbt parse --no-partial-parse
+
+              uv run dbt compile \
+                --select \
+                  int_funding_hourly \
+                  int_liquidation_hourly \
+                  int_options_hourly \
+                  int_stablecoin_hourly \
+                  fact_crypto_features_hourly \
+                  mart_ml_training_dataset_hourly \
+                  mart_dashboard_kpi_latest \
+                --vars '{"enable_ml_outputs_marts": true}' \
+                --no-partial-parse
+
+              echo "[pr-dbt] PR dbt test completed. No dbt build was performed."
+          env:
+            - name: DBT_TARGET
+              value: gke
+            - name: GCP_PROJECT_ID
+              value: project-lambda-crypto
+            - name: BQ_ANALYTICS_DATASET
+              value: dbt_quants_dev
+            - name: BQ_ML_OUTPUTS_DATASET
+              value: ml_outputs
+            - name: BQ_LOCATION
+              value: asia-southeast1
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              memory: "2Gi"

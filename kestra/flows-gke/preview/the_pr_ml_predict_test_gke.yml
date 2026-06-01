@@ -1,0 +1,97 @@
+id: the_pr_ml_predict_test_gke
+namespace: crypto.data_engineering
+
+labels:
+  system.readOnly: "true"
+
+description: |
+  PR ML predict smoke test.
+  Uses PR preview crypto-ml image.
+  Checks imports, CLI, and model artifact accessibility.
+  Does not write predictions.
+
+inputs:
+  - id: image_tag
+    type: STRING
+    defaults: latest
+    description: Docker image tag to test, for example pr-123.
+
+variables:
+  image_base: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker
+
+tasks:
+  - id: test_ml_predict_preview_image
+    type: io.kestra.plugin.kubernetes.core.PodCreate
+    namespace: kestra
+    waitUntilRunning: PT10M
+    spec:
+      serviceAccountName: kestra
+      restartPolicy: Never
+
+      containers:
+        - name: pr-ml-predict-test
+          image: "{{ vars.image_base }}/crypto-ml:{{ inputs.image_tag }}"
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -lc
+            - |
+              set -e
+
+              cd /app/ml
+
+              echo "[pr-ml] Testing image tag: {{ inputs.image_tag }}"
+              python --version
+
+              echo "[pr-ml] Import check..."
+              python - <<'PY'
+              import json
+              import pandas
+              import sklearn
+              import joblib
+              from google.cloud import bigquery
+              from google.cloud import storage
+              print("ml imports ok")
+              PY
+
+              echo "[pr-ml] CLI check..."
+              python train_model.py --help >/tmp/train_help.txt
+              python predict_latest.py --help >/tmp/predict_help.txt
+              head -n 5 /tmp/predict_help.txt || true
+
+              echo "[pr-ml] GCS model artifact metadata check..."
+              python - <<'PY'
+              import os
+              from google.cloud import storage
+
+              bucket_name = os.environ["GCP_BUCKET_NAME"]
+              blob_name = "ml-artifacts/crypto_direction_lgbm_v1/latest_model.json"
+
+              client = storage.Client(project=os.environ["GCP_PROJECT_ID"])
+              bucket = client.bucket(bucket_name)
+              blob = bucket.blob(blob_name)
+
+              if not blob.exists():
+                  raise RuntimeError(f"Missing model metadata: gs://{bucket_name}/{blob_name}")
+
+              print(f"model metadata exists: gs://{bucket_name}/{blob_name}")
+              PY
+
+              echo "[pr-ml] PR ML predict test completed. No prediction write was performed."
+          env:
+            - name: GCP_PROJECT_ID
+              value: project-lambda-crypto
+            - name: GCP_BUCKET_NAME
+              value: crypto-raw-archive-unique-6451
+            - name: BQ_ANALYTICS_DATASET
+              value: dbt_quants_dev
+            - name: BQ_ML_OUTPUTS_DATASET
+              value: ml_outputs
+            - name: BQ_LOCATION
+              value: asia-southeast1
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              memory: "2Gi"

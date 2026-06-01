@@ -32,10 +32,15 @@ jobs:
     name: Build and push Docker images
     runs-on: ubuntu-latest
 
+    # Do not grant cloud credentials to fork PRs.
+    if: >
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+
     permissions:
       contents: read
       id-token: write
-      pull-requests: read
+      pull-requests: write
 
     steps:
       - name: Checkout repository
@@ -59,81 +64,176 @@ jobs:
               - 'docker/ml.Dockerfile'
               - '.github/workflows/docker-build-push.yml'
 
+      - name: Compute image tag
+        id: meta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            IMAGE_TAG="pr-${{ github.event.pull_request.number }}"
+            PUSH_LATEST="false"
+          else
+            IMAGE_TAG="${{ github.sha }}"
+            PUSH_LATEST="true"
+          fi
+
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "push_latest=${PUSH_LATEST}" >> "$GITHUB_OUTPUT"
+
+          echo "IMAGE_TAG=${IMAGE_TAG}"
+          echo "PUSH_LATEST=${PUSH_LATEST}"
+
       - name: Authenticate to Google Cloud
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_CICD_SERVICE_ACCOUNT }}
 
       - name: Set up gcloud
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker for Artifact Registry
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
 
+      # On PR, build all 3 images so the Kestra PR test flows can use the same image_tag.
+      # On main, only build changed components.
+
       # --- BATCH COMPONENT ---
       - name: Build batch image
-        if: steps.filter.outputs.batch == 'true'
+        if: github.event_name == 'pull_request' || steps.filter.outputs.batch == 'true'
         run: |
           docker build \
-            -t ${IMAGE_BASE}/crypto-batch:${{ github.sha }} \
-            -t ${IMAGE_BASE}/crypto-batch:latest \
+            -t ${IMAGE_BASE}/crypto-batch:${{ steps.meta.outputs.image_tag }} \
             -f docker/batch.Dockerfile \
             local_scripts
 
       - name: Smoke test batch image
-        if: steps.filter.outputs.batch == 'true'
+        if: github.event_name == 'pull_request' || steps.filter.outputs.batch == 'true'
         run: |
-          docker run --rm ${IMAGE_BASE}/crypto-batch:${{ github.sha }} python --version
+          docker run --rm ${IMAGE_BASE}/crypto-batch:${{ steps.meta.outputs.image_tag }} python --version
 
       - name: Push batch image
-        if: steps.filter.outputs.batch == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'pull_request' || steps.filter.outputs.batch == 'true'
         run: |
-          docker push ${IMAGE_BASE}/crypto-batch:${{ github.sha }}
+          docker push ${IMAGE_BASE}/crypto-batch:${{ steps.meta.outputs.image_tag }}
+
+      - name: Push batch latest image
+        if: steps.filter.outputs.batch == 'true' && steps.meta.outputs.push_latest == 'true'
+        run: |
+          docker tag ${IMAGE_BASE}/crypto-batch:${{ steps.meta.outputs.image_tag }} ${IMAGE_BASE}/crypto-batch:latest
           docker push ${IMAGE_BASE}/crypto-batch:latest
 
       # --- DBT COMPONENT ---
       - name: Build dbt image
-        if: steps.filter.outputs.dbt == 'true'
+        if: github.event_name == 'pull_request' || steps.filter.outputs.dbt == 'true'
         run: |
           docker build \
-            -t ${IMAGE_BASE}/crypto-dbt:${{ github.sha }} \
-            -t ${IMAGE_BASE}/crypto-dbt:latest \
+            -t ${IMAGE_BASE}/crypto-dbt:${{ steps.meta.outputs.image_tag }} \
             -f docker/dbt.Dockerfile \
             dbt_transform
 
       - name: Smoke test dbt image
-        if: steps.filter.outputs.dbt == 'true'
+        if: github.event_name == 'pull_request' || steps.filter.outputs.dbt == 'true'
         run: |
-          docker run --rm ${IMAGE_BASE}/crypto-dbt:${{ github.sha }} uv run dbt --version
+          docker run --rm ${IMAGE_BASE}/crypto-dbt:${{ steps.meta.outputs.image_tag }} uv run dbt --version
 
       - name: Push dbt image
-        if: steps.filter.outputs.dbt == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'pull_request' || steps.filter.outputs.dbt == 'true'
         run: |
-          docker push ${IMAGE_BASE}/crypto-dbt:${{ github.sha }}
+          docker push ${IMAGE_BASE}/crypto-dbt:${{ steps.meta.outputs.image_tag }}
+
+      - name: Push dbt latest image
+        if: steps.filter.outputs.dbt == 'true' && steps.meta.outputs.push_latest == 'true'
+        run: |
+          docker tag ${IMAGE_BASE}/crypto-dbt:${{ steps.meta.outputs.image_tag }} ${IMAGE_BASE}/crypto-dbt:latest
           docker push ${IMAGE_BASE}/crypto-dbt:latest
 
       # --- ML COMPONENT ---
       - name: Build ML image
-        if: steps.filter.outputs.ml == 'true'
+        if: github.event_name == 'pull_request' || steps.filter.outputs.ml == 'true'
         run: |
           docker build \
-            -t ${IMAGE_BASE}/crypto-ml:${{ github.sha }} \
-            -t ${IMAGE_BASE}/crypto-ml:latest \
+            -t ${IMAGE_BASE}/crypto-ml:${{ steps.meta.outputs.image_tag }} \
             -f docker/ml.Dockerfile \
             ml
 
       - name: Smoke test ML image
-        if: steps.filter.outputs.ml == 'true'
+        if: github.event_name == 'pull_request' || steps.filter.outputs.ml == 'true'
         run: |
-          docker run --rm ${IMAGE_BASE}/crypto-ml:${{ github.sha }} python --version
+          docker run --rm ${IMAGE_BASE}/crypto-ml:${{ steps.meta.outputs.image_tag }} python --version
 
       - name: Push ML image
-        if: steps.filter.outputs.ml == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'pull_request' || steps.filter.outputs.ml == 'true'
         run: |
-          docker push ${IMAGE_BASE}/crypto-ml:${{ github.sha }}
+          docker push ${IMAGE_BASE}/crypto-ml:${{ steps.meta.outputs.image_tag }}
+
+      - name: Push ML latest image
+        if: steps.filter.outputs.ml == 'true' && steps.meta.outputs.push_latest == 'true'
+        run: |
+          docker tag ${IMAGE_BASE}/crypto-ml:${{ steps.meta.outputs.image_tag }} ${IMAGE_BASE}/crypto-ml:latest
           docker push ${IMAGE_BASE}/crypto-ml:latest
+
+      - name: Comment PR preview image tag
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const imageTag = '${{ steps.meta.outputs.image_tag }}';
+            const imageBase = '${{ env.IMAGE_BASE }}';
+
+            const marker = '<!-- crypto-preview-image-tag -->';
+            const body = `${marker}
+            ## 🚀 Preview Docker images are ready
+
+            Use this image tag in Kestra PR test flows:
+
+            \`\`\`text
+            ${imageTag}
+            \`\`\`
+
+            Images:
+
+            \`\`\`text
+            ${imageBase}/crypto-batch:${imageTag}
+            ${imageBase}/crypto-dbt:${imageTag}
+            ${imageBase}/crypto-ml:${imageTag}
+            \`\`\`
+
+            Recommended Kestra tests:
+
+            \`\`\`text
+            the_pr_raw_hourly_test_gke
+            the_pr_dbt_test_gke
+            the_pr_ml_predict_test_gke
+            \`\`\`
+            `;
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+
+            const comments = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const previous = comments.data.find(comment =>
+              comment.body && comment.body.includes(marker)
+            );
+
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: previous.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
