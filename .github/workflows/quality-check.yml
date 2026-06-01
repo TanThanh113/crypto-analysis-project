@@ -43,6 +43,7 @@ jobs:
           WHITELIST=(
             "^terraform/kestra_secrets\.tf$"
             "^k8s/kestra/secret-provider-class-batch\.yml$"
+            "^scripts/sync_kestra_k8s_secrets\.sh$"
           )
 
           WHITELIST_REGEX=$(IFS="|"; echo "${WHITELIST[*]}")

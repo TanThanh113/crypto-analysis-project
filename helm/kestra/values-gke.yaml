@@ -26,8 +26,20 @@ common:
     - name: KESTRA_DB_PASSWORD
       valueFrom:
         secretKeyRef:
-          name: kestra-db-secret
+          name: kestra-runtime-secret
           key: KESTRA_DB_PASSWORD
+
+    - name: KESTRA_BASIC_AUTH_USERNAME
+      valueFrom:
+        secretKeyRef:
+          name: kestra-runtime-secret
+          key: KESTRA_BASIC_AUTH_USERNAME
+
+    - name: KESTRA_BASIC_AUTH_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: kestra-runtime-secret
+          key: KESTRA_BASIC_AUTH_PASSWORD
 
 # Microservices
 deployments:
@@ -36,6 +48,12 @@ deployments:
 
   webserver:
     enabled: true # Enable Web UI
+    startupProbe:
+      httpGet:
+          path: /health
+          port: management
+      failureThreshold: 300 # Allows 300 trials (equivalent to 5 minutes).
+      periodSeconds: 1      # Check once every second.
 
   executor:
     enabled: true # Turn on the command dispatcher
@@ -64,6 +82,7 @@ configurations:
     kestra:
       server:
         basic-auth:
+          enabled: true
           username: "${KESTRA_BASIC_AUTH_USERNAME}"
           password: "${KESTRA_BASIC_AUTH_PASSWORD}"
           
