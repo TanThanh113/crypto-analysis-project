@@ -205,6 +205,7 @@ jobs:
             the_pr_raw_hourly_test_gke
             the_pr_dbt_test_gke
             the_pr_ml_predict_test_gke
+            the_pr_quality_monitoring_test_gke
             \`\`\`
             `;
 

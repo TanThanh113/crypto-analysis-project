@@ -7,6 +7,8 @@ env:
   CLUSTER_NAME: crypto-kestra-autopilot
   KESTRA_NAMESPACE: kestra
   KESTRA_SERVER: http://127.0.0.1:8080
+  PROD_FLOW_NAMESPACE: crypto.data_engineering
+  IMAGE_BASE: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker
 
 on:
   push:
@@ -17,6 +19,12 @@ on:
       - "k8s/kestra/**"
       - "kestra/flows-gke/**"
       - ".github/workflows/kestra-deploy-gke.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "kestra/flows-gke/**"
+      - ".github/workflows/kestra-deploy-gke.yml"
   workflow_dispatch:
 
 jobs:
@@ -24,9 +32,15 @@ jobs:
     name: Deploy Kestra Helm and flows
     runs-on: ubuntu-latest
 
+    # Never grant cloud credentials to fork PRs.
+    if: >
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+
     permissions:
       contents: read
       id-token: write
+      pull-requests: write
 
     steps:
       - name: Checkout repository
@@ -45,6 +59,33 @@ jobs:
               - 'kestra/flows-gke/**'
               - '.github/workflows/kestra-deploy-gke.yml'
 
+      - name: Compute deploy metadata
+        id: meta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            IMAGE_TAG="pr-${PR_NUMBER}"
+            DEPLOY_MODE="preview"
+            FLOW_NAMESPACE="crypto.preview.pr_${PR_NUMBER}"
+            FLOW_DIR="/tmp/kestra-preview-flows"
+          else
+            IMAGE_TAG="latest"
+            DEPLOY_MODE="production"
+            FLOW_NAMESPACE="${PROD_FLOW_NAMESPACE}"
+            FLOW_DIR="./kestra/flows-gke"
+          fi
+
+          echo "deploy_mode=${DEPLOY_MODE}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "flow_namespace=${FLOW_NAMESPACE}" >> "$GITHUB_OUTPUT"
+          echo "flow_dir=${FLOW_DIR}" >> "$GITHUB_OUTPUT"
+
+          echo "DEPLOY_MODE=${DEPLOY_MODE}"
+          echo "IMAGE_TAG=${IMAGE_TAG}"
+          echo "FLOW_NAMESPACE=${FLOW_NAMESPACE}"
+          echo "FLOW_DIR=${FLOW_DIR}"
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -61,21 +102,22 @@ jobs:
           cluster_name: ${{ env.CLUSTER_NAME }}
           location: ${{ env.REGION }}
 
-      # Case 1: INFRASTRUCTURE DEPLOYMENT
+      # Production Helm deployment only.
+      # PRs must not upgrade Kestra infrastructure.
       - name: Install Helm
-        if: steps.filter.outputs.helm_infra == 'true'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.filter.outputs.helm_infra == 'true'
         run: |
           curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
           helm version
 
       - name: Check cluster access
-        if: steps.filter.outputs.helm_infra == 'true'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.filter.outputs.helm_infra == 'true'
         run: |
           kubectl get namespace ${KESTRA_NAMESPACE}
           kubectl get pods -n ${KESTRA_NAMESPACE}
 
       - name: Deploy or upgrade Kestra Helm release
-        if: steps.filter.outputs.helm_infra == 'true'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.filter.outputs.helm_infra == 'true'
         run: |
           helm repo add kestra https://helm.kestra.io/
           helm repo update
@@ -87,13 +129,97 @@ jobs:
             --timeout 15m
 
       - name: Wait for Kestra webserver
-        if: steps.filter.outputs.helm_infra == 'true'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.filter.outputs.helm_infra == 'true'
         run: |
           kubectl rollout status deployment/kestra-webserver \
             -n ${KESTRA_NAMESPACE} \
             --timeout=10m
 
-      # Case 2: DEPLOY DATA FLOW
+      # PR preview flow generation.
+      # This copies kestra/flows-gke to /tmp, rewrites namespace to crypto.preview.pr_N,
+      # removes top-level triggers, and swaps Artifact Registry :latest images to :pr-N.
+      - name: Generate PR preview Kestra flows
+        if: github.event_name == 'pull_request' && steps.filter.outputs.kestra_flows == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python -m pip install --user pyyaml
+
+          python - <<'PY'
+          from __future__ import annotations
+
+          import os
+          import pathlib
+          import shutil
+          import yaml
+
+          source_root = pathlib.Path("kestra/flows-gke")
+          target_root = pathlib.Path("${{ steps.meta.outputs.flow_dir }}")
+          preview_namespace = "${{ steps.meta.outputs.flow_namespace }}"
+          prod_namespace = os.environ["PROD_FLOW_NAMESPACE"]
+          image_base = os.environ["IMAGE_BASE"]
+          image_tag = "${{ steps.meta.outputs.image_tag }}"
+
+          if target_root.exists():
+              shutil.rmtree(target_root)
+          target_root.mkdir(parents=True, exist_ok=True)
+
+          def rewrite_object(obj):
+              if isinstance(obj, dict):
+                  for key, value in list(obj.items()):
+                      if key == "namespace" and value == prod_namespace:
+                          obj[key] = preview_namespace
+
+                      if key in {"image", "containerImage"} and isinstance(value, str):
+                          if value.startswith(image_base) and value.endswith(":latest"):
+                              obj[key] = value[:-len(":latest")] + f":{image_tag}"
+
+                      rewrite_object(value)
+
+              elif isinstance(obj, list):
+                  for item in obj:
+                      rewrite_object(item)
+
+          count = 0
+
+          for src in sorted(source_root.rglob("*.yml")) + sorted(source_root.rglob("*.yaml")):
+              rel = src.relative_to(source_root)
+              dst = target_root / rel
+              dst.parent.mkdir(parents=True, exist_ok=True)
+
+              with src.open("r", encoding="utf-8") as f:
+                  flow = yaml.safe_load(f)
+
+              if not isinstance(flow, dict):
+                  continue
+
+              # Force preview namespace and disable automatic schedules/flow triggers.
+              flow["namespace"] = preview_namespace
+              flow.pop("triggers", None)
+
+              labels = flow.get("labels")
+              if not isinstance(labels, dict):
+                  labels = {}
+              labels["preview"] = "true"
+              labels["preview.pr"] = "${{ github.event.pull_request.number }}"
+              labels["preview.image_tag"] = image_tag
+              flow["labels"] = labels
+
+              rewrite_object(flow)
+
+              with dst.open("w", encoding="utf-8") as f:
+                  yaml.safe_dump(flow, f, sort_keys=False, allow_unicode=True)
+
+              count += 1
+              print(f"Generated preview flow: {dst}")
+
+          print(f"Generated {count} preview flow file(s) in {target_root}")
+          PY
+
+          echo "Preview flow files:"
+          find "${{ steps.meta.outputs.flow_dir }}" -type f -name '*.yml' -o -name '*.yaml'
+
       - name: Port-forward Kestra webserver
         if: steps.filter.outputs.kestra_flows == 'true'
         run: |
@@ -119,7 +245,7 @@ jobs:
           curl -fsS \
             -u "${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}:${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}" \
             ${KESTRA_SERVER}/ > /dev/null
-            
+
       - name: Install kestractl
         if: steps.filter.outputs.kestra_flows == 'true'
         run: |
@@ -127,13 +253,88 @@ jobs:
           ./kestractl --help
           ./kestractl flows deploy --help
 
-      - name: Deploy GKE-ready Kestra flows
+      - name: Deploy Kestra flows
         if: steps.filter.outputs.kestra_flows == 'true'
         env:
           KESTRACTL_USERNAME: ${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}
           KESTRACTL_PASSWORD: ${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}
         run: |
-          ./kestractl flows deploy ./kestra/flows-gke \
+          echo "Deploying Kestra flows..."
+          echo "Mode: ${{ steps.meta.outputs.deploy_mode }}"
+          echo "Namespace: ${{ steps.meta.outputs.flow_namespace }}"
+          echo "Directory: ${{ steps.meta.outputs.flow_dir }}"
+
+          ./kestractl flows deploy "${{ steps.meta.outputs.flow_dir }}" \
             --host "${KESTRA_SERVER}" \
             --tenant main \
             --override
+
+      - name: Comment PR Kestra preview namespace
+        if: github.event_name == 'pull_request' && steps.filter.outputs.kestra_flows == 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const marker = '<!-- crypto-kestra-preview-flows -->';
+            const namespace = '${{ steps.meta.outputs.flow_namespace }}';
+            const imageTag = '${{ steps.meta.outputs.image_tag }}';
+
+            const body = `${marker}
+            ## ✅ Kestra preview flows deployed
+
+            Preview namespace:
+
+            \`\`\`text
+            ${namespace}
+            \`\`\`
+
+            Preview image tag:
+
+            \`\`\`text
+            ${imageTag}
+            \`\`\`
+
+            These preview flows have:
+            - top-level triggers removed
+            - namespace rewritten from \`${{ env.PROD_FLOW_NAMESPACE }}\` to \`${namespace}\`
+            - Artifact Registry \`:latest\` images rewritten to \`:${imageTag}\`
+
+            Recommended manual tests in Kestra UI:
+            \`\`\`text
+            ${namespace}.the_pr_raw_hourly_test_gke
+            ${namespace}.the_pr_dbt_test_gke
+            ${namespace}.the_pr_ml_predict_test_gke
+            ${namespace}.the_pr_quality_monitoring_test_gke
+            \`\`\`
+
+            Do not manually run full production-like flows unless you confirm they are side-effect safe.
+            `;
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+
+            const comments = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const previous = comments.data.find(comment =>
+              comment.body && comment.body.includes(marker)
+            );
+
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: previous.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }

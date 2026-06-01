@@ -1,0 +1,188 @@
+name: Cleanup Kestra Preview Flows
+
+on:
+  pull_request:
+    types:
+      - closed
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PROJECT_ID: project-lambda-crypto
+  REGION: asia-southeast1
+  CLUSTER_NAME: crypto-kestra-autopilot
+  KESTRA_NAMESPACE: kestra
+  KESTRA_SERVER: http://127.0.0.1:8080
+
+jobs:
+  cleanup-kestra-preview-flows:
+    name: Delete Kestra PR preview flows
+    runs-on: ubuntu-latest
+
+    # Never grant cloud credentials to fork PRs.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Compute preview namespace
+        id: meta
+        shell: bash
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PREVIEW_NAMESPACE="crypto.preview.pr_${PR_NUMBER}"
+
+          echo "preview_namespace=${PREVIEW_NAMESPACE}" >> "$GITHUB_OUTPUT"
+          echo "PREVIEW_NAMESPACE=${PREVIEW_NAMESPACE}"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_CICD_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          location: ${{ env.REGION }}
+
+      - name: Port-forward Kestra webserver
+        run: |
+          kubectl port-forward deployment/kestra-webserver 8080:8080 -n ${KESTRA_NAMESPACE} > /tmp/kestra-port-forward.log 2>&1 &
+          echo $! > /tmp/kestra-port-forward.pid
+
+          for i in $(seq 1 30); do
+            if curl -fsS ${KESTRA_SERVER} > /dev/null; then
+              echo "Kestra is reachable."
+              exit 0
+            fi
+            echo "Waiting for Kestra..."
+            sleep 5
+          done
+
+          echo "Kestra did not become reachable."
+          cat /tmp/kestra-port-forward.log || true
+          exit 1
+
+      - name: Install kestractl and jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+          curl -fsSL https://raw.githubusercontent.com/kestra-io/kestractl/main/install-scripts/install.sh | INSTALL_DIR='./' bash
+          ./kestractl --help
+          ./kestractl flows list --help
+
+      - name: Delete preview flows from Kestra
+        env:
+          KESTRACTL_USERNAME: ${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}
+          KESTRACTL_PASSWORD: ${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}
+          PREVIEW_NAMESPACE: ${{ steps.meta.outputs.preview_namespace }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Cleaning Kestra preview namespace: ${PREVIEW_NAMESPACE}"
+
+          FLOW_JSON="$(./kestractl flows list "${PREVIEW_NAMESPACE}" \
+            --host "${KESTRA_SERVER}" \
+            --tenant main \
+            --output json || true)"
+
+          echo "Raw flow list:"
+          echo "${FLOW_JSON}" | jq . || echo "${FLOW_JSON}"
+
+          FLOW_IDS="$(echo "${FLOW_JSON}" | jq -r '
+            if type == "array" then
+              .[]?.id
+            elif has("results") then
+              .results[]?.id
+            elif has("flows") then
+              .flows[]?.id
+            else
+              empty
+            end
+          ')"
+
+          if [ -z "${FLOW_IDS}" ]; then
+            echo "No preview flows found in namespace ${PREVIEW_NAMESPACE}."
+            exit 0
+          fi
+
+          echo "Flows to delete:"
+          echo "${FLOW_IDS}"
+
+          while IFS= read -r FLOW_ID; do
+            if [ -z "${FLOW_ID}" ]; then
+              continue
+            fi
+
+            echo "Deleting flow ${PREVIEW_NAMESPACE}.${FLOW_ID}"
+
+            curl -fsS -X DELETE \
+              -u "${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}:${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}" \
+              "${KESTRA_SERVER}/api/v1/main/flows/${PREVIEW_NAMESPACE}/${FLOW_ID}" \
+              || echo "Flow ${FLOW_ID} may already be deleted."
+
+          done <<< "${FLOW_IDS}"
+
+          echo "Kestra preview flow cleanup completed."
+
+      - name: Comment PR cleanup result
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const marker = '<!-- crypto-kestra-preview-cleanup -->';
+            const namespace = '${{ steps.meta.outputs.preview_namespace }}';
+
+            const body = `${marker}
+            ## 🧹 Kestra preview flows cleaned up
+
+            Preview namespace cleaned:
+
+            \`\`\`text
+            ${namespace}
+            \`\`\`
+
+            The PR preview flow definitions were deleted from Kestra after the PR was closed or merged.
+            `;
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+
+            const comments = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const previous = comments.data.find(comment =>
+              comment.body && comment.body.includes(marker)
+            );
+
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: previous.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
