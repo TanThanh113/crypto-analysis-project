@@ -1,0 +1,62 @@
+id: the_pipeline_health_check_gke
+namespace: crypto.data_engineering
+
+labels:
+  system.readOnly: "true"
+
+description: |
+  Production pipeline health check.
+  Checks data freshness, GE audit status, model metrics, training dataset, and prediction freshness.
+  Writes results to ml_outputs.pipeline_health_check_results.
+
+# Enable after manual test passes.
+# triggers:
+#   - id: hourly_health_check_gke
+#     type: io.kestra.plugin.core.trigger.Schedule
+#     cron: "15 * * * *"
+#     timezone: UTC
+#     recoverMissedSchedules: NONE
+
+tasks:
+  - id: run_pipeline_health_check
+    type: io.kestra.plugin.kubernetes.core.PodCreate
+    namespace: kestra
+    waitUntilRunning: PT10M
+    spec:
+      serviceAccountName: kestra
+      restartPolicy: Never
+      containers:
+        - name: pipeline-health-check
+          image: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -lc
+            - |
+              set -e
+
+              cd /app
+
+              echo "[monitoring] Python path:"
+              which python
+              python --version
+
+              echo "[monitoring] Running pipeline health check..."
+              uv run python /app/batch/pipeline_health_check.py --fail-on-critical
+
+              echo "[monitoring] Pipeline health check completed."
+          env:
+            - name: GCP_PROJECT_ID
+              value: project-lambda-crypto
+            - name: BQ_ANALYTICS_DATASET
+              value: dbt_quants_dev
+            - name: BQ_ML_OUTPUTS_DATASET
+              value: ml_outputs
+            - name: BQ_LOCATION
+              value: asia-southeast1
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              memory: "2Gi"
