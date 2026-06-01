@@ -1,0 +1,55 @@
+name: Cleanup PR Preview Images
+
+on:
+  pull_request:
+    types:
+      - closed
+
+env:
+  PROJECT_ID: project-lambda-crypto
+  REGION: asia-southeast1
+  ARTIFACT_REPO: crypto-docker
+  IMAGE_BASE: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker
+
+jobs:
+  cleanup-preview-images:
+    name: Delete PR preview Docker images
+    runs-on: ubuntu-latest
+
+    # Only cleanup PRs from this repository, not forks.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_CICD_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Delete PR preview image tags
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PR_TAG="pr-${{ github.event.pull_request.number }}"
+
+          echo "Cleaning preview images for tag: ${PR_TAG}"
+
+          for IMAGE in crypto-batch crypto-dbt crypto-ml; do
+            IMAGE_REF="${IMAGE_BASE}/${IMAGE}:${PR_TAG}"
+            echo "Deleting ${IMAGE_REF} if it exists..."
+
+            gcloud artifacts docker images delete "${IMAGE_REF}" \
+              --project="${PROJECT_ID}" \
+              --quiet \
+              --delete-tags || true
+          done
+
+          echo "Preview image cleanup completed."
