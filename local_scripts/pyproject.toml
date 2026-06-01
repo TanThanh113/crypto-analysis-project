@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "alpha-vantage>=3.0.0",
+    "db-dtypes>=1.6.0",
     "fastparquet>=2026.3.0",
     "gcsfs>=2026.5.0",
     "google-cloud-bigquery>=3.41.0",
