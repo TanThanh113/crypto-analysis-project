@@ -9,7 +9,7 @@ locals {
   github_cicd_roles = [
     "roles/artifactregistry.writer",
     "roles/container.developer",
-    
+
     "roles/bigquery.jobUser",
     "roles/bigquery.dataViewer"
   ]
