@@ -5,8 +5,8 @@ on:
     branches:
       - main
     paths:
-      - 'dbt_transform/**'
-      - '.github/workflows/deploy-dbt-docs.yml'
+      - "dbt_transform/**"
+      - ".github/workflows/deploy-dbt-docs.yml"
   workflow_dispatch:
 
 permissions:
@@ -15,21 +15,23 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: "dbt-docs-pages"
   cancel-in-progress: false
 
 jobs:
-  deploy-lineage:
-    name: Build and Deploy Data Lineage
+  deploy-dbt-docs:
+    name: Build and deploy dbt docs
+    runs-on: ubuntu-latest
+
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Set up uv package manager
+      - name: Set up uv
         uses: astral-sh/setup-uv@v5
 
       - name: Authenticate to Google Cloud
@@ -38,25 +40,27 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_CICD_SERVICE_ACCOUNT }}
 
-      - name: Generate dbt Documentation
+      - name: Generate dbt documentation
         working-directory: dbt_transform
         env:
+          DBT_TARGET: gke
           GCP_PROJECT_ID: project-lambda-crypto
           BQ_ANALYTICS_DATASET: dbt_quants_dev
+          BQ_ML_OUTPUTS_DATASET: ml_outputs
           BQ_LOCATION: asia-southeast1
         run: |
           uv sync --locked
           cd crypto_dbt
           uv run dbt deps
-          uv run dbt docs generate
+          uv run dbt docs generate --no-partial-parse
 
-      - name: Setup GitHub Pages
+      - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload dbt static assets
+      - name: Upload dbt docs artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'dbt_transform/crypto_dbt/target'
+          path: dbt_transform/crypto_dbt/target
 
       - name: Deploy to GitHub Pages
         id: deployment
