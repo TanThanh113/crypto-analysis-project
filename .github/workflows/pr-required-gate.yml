@@ -1,0 +1,241 @@
+name: PR Required Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  detect-changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: read
+
+    outputs:
+      docker_required: ${{ steps.filter.outputs.docker_required }}
+      kestra_required: ${{ steps.filter.outputs.kestra_required }}
+      dbt_required: ${{ steps.filter.outputs.dbt_required }}
+      terraform_required: ${{ steps.filter.outputs.terraform_required }}
+      docs_only: ${{ steps.detect_docs.outputs.docs_only }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Detect changed paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            docker_required:
+              - 'local_scripts/**'
+              - 'dbt_transform/**'
+              - 'ml/**'
+              - 'docker/**'
+              - '.github/workflows/docker-build-push.yml'
+
+            kestra_required:
+              - 'kestra/flows-gke/**'
+              - 'helm/kestra/**'
+              - 'k8s/kestra/**'
+              - '.github/workflows/kestra-deploy-gke.yml'
+
+            dbt_required:
+              - 'dbt_transform/**'
+
+            terraform_required:
+              - 'terraform/**'
+
+            docs:
+              - '**/*.md'
+              - 'docs/**'
+              - '.github/pull_request_template.md'
+
+            non_docs:
+              - '!**/*.md'
+              - '!docs/**'
+              - '!.github/pull_request_template.md'
+              - '**'
+
+      - name: Detect docs-only PR
+        id: detect_docs
+        shell: bash
+        run: |
+          if [ "${{ steps.filter.outputs.docs }}" = "true" ] && \
+             [ "${{ steps.filter.outputs.non_docs }}" = "false" ]; then
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+            echo "This is a docs-only PR."
+          else
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            echo "This PR changes non-doc files."
+          fi
+
+      - name: Print change summary
+        run: |
+          echo "docker_required=${{ steps.filter.outputs.docker_required }}"
+          echo "kestra_required=${{ steps.filter.outputs.kestra_required }}"
+          echo "dbt_required=${{ steps.filter.outputs.dbt_required }}"
+          echo "terraform_required=${{ steps.filter.outputs.terraform_required }}"
+          echo "docs_only=${{ steps.detect_docs.outputs.docs_only }}"
+
+  pr-required-gate:
+    name: PR Required Gate
+    runs-on: ubuntu-latest
+    needs:
+      - detect-changes
+
+    permissions:
+      contents: read
+      checks: read
+      actions: read
+      pull-requests: read
+
+    steps:
+      - name: Wait for required workflow checks
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const sha = context.payload.pull_request
+              ? context.payload.pull_request.head.sha
+              : context.sha;
+
+            const dockerRequired = '${{ needs.detect-changes.outputs.docker_required }}' === 'true';
+            const kestraRequired = '${{ needs.detect-changes.outputs.kestra_required }}' === 'true';
+            const docsOnly = '${{ needs.detect-changes.outputs.docs_only }}' === 'true';
+
+            const requiredChecks = [
+              {
+                name: 'Repository quality checks',
+                required: true,
+                reason: 'Quality checks are always required.'
+              },
+              {
+                name: 'Build and push Docker images',
+                required: dockerRequired,
+                reason: 'Docker preview image build is required because runtime code, dbt, ML, Dockerfile, or image workflow changed.'
+              },
+              {
+                name: 'Deploy Kestra Helm and flows',
+                required: kestraRequired,
+                reason: 'Kestra preview deploy is required because Kestra flows, Helm, Kubernetes manifests, or Kestra deploy workflow changed.'
+              }
+            ];
+
+            const required = requiredChecks.filter(item => item.required);
+
+            core.info(`PR head SHA: ${sha}`);
+            core.info(`docsOnly=${docsOnly}`);
+            core.info(`dockerRequired=${dockerRequired}`);
+            core.info(`kestraRequired=${kestraRequired}`);
+            core.info(`Required checks: ${required.map(item => item.name).join(', ')}`);
+
+            const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+            async function listCheckRuns() {
+              const runs = await github.paginate(
+                github.rest.checks.listForRef,
+                {
+                  owner,
+                  repo,
+                  ref: sha,
+                  per_page: 100
+                }
+              );
+
+              return runs;
+            }
+
+            function findLatestCheckRun(checkRuns, checkName) {
+              const matches = checkRuns
+                .filter(run => run.name === checkName)
+                .sort((a, b) => new Date(b.started_at || b.created_at) - new Date(a.started_at || a.created_at));
+
+              return matches[0];
+            }
+
+            const maxAttempts = 90;
+            const delayMs = 10000;
+
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              const checkRuns = await listCheckRuns();
+
+              const statuses = required.map(item => {
+                const run = findLatestCheckRun(checkRuns, item.name);
+                return {
+                  ...item,
+                  run
+                };
+              });
+
+              for (const status of statuses) {
+                if (!status.run) {
+                  core.info(`[attempt ${attempt}/${maxAttempts}] ${status.name}: not found yet`);
+                } else {
+                  core.info(
+                    `[attempt ${attempt}/${maxAttempts}] ${status.name}: status=${status.run.status}, conclusion=${status.run.conclusion}`
+                  );
+                }
+              }
+
+              const missing = statuses.filter(status => !status.run);
+              const running = statuses.filter(status =>
+                status.run &&
+                status.run.status !== 'completed'
+              );
+
+              const failed = statuses.filter(status =>
+                status.run &&
+                status.run.status === 'completed' &&
+                !['success', 'skipped', 'neutral'].includes(status.run.conclusion)
+              );
+
+              if (failed.length > 0) {
+                const message = failed
+                  .map(status => `${status.name} failed with conclusion=${status.run.conclusion}`)
+                  .join('\n');
+
+                core.setFailed(`Required workflow check failed:\n${message}`);
+                return;
+              }
+
+              if (missing.length === 0 && running.length === 0) {
+                core.info('All required workflow checks passed.');
+                return;
+              }
+
+              await sleep(delayMs);
+            }
+
+            const finalCheckRuns = await listCheckRuns();
+            const finalStatuses = required.map(item => {
+              const run = findLatestCheckRun(finalCheckRuns, item.name);
+              return {
+                name: item.name,
+                status: run ? run.status : 'missing',
+                conclusion: run ? run.conclusion : 'missing'
+              };
+            });
+
+            core.setFailed(
+              `Timed out waiting for required workflow checks.\n` +
+              JSON.stringify(finalStatuses, null, 2)
+            );
+
+      - name: Print merge gate summary
+        if: always()
+        run: |
+          echo "PR Required Gate completed."
+          echo "Docs only: ${{ needs.detect-changes.outputs.docs_only }}"
+          echo "Docker required: ${{ needs.detect-changes.outputs.docker_required }}"
+          echo "Kestra required: ${{ needs.detect-changes.outputs.kestra_required }}"
+          echo "dbt changed: ${{ needs.detect-changes.outputs.dbt_required }}"
+          echo "Terraform changed: ${{ needs.detect-changes.outputs.terraform_required }}"
