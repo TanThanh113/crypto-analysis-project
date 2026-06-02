@@ -8,7 +8,8 @@ resource "google_service_account" "github_cicd_sa" {
 locals {
   github_cicd_roles = [
     "roles/artifactregistry.writer",
-    "roles/container.developer"
+    "roles/container.developer",
+    "roles/bigquery.user",
   ]
 }
 
