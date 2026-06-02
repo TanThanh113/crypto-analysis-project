@@ -44,6 +44,12 @@ tasks:
               echo "[monitoring] Running pipeline health check..."
               uv run python /app/batch/pipeline_health_check.py --fail-on-critical
 
+              echo "[monitoring] Sending Slack alert if needed..."
+              uv run python /app/batch/send_slack_health_alert.py \
+                --recent-minutes 30 \
+                --only-on-failure \
+                --fail-on-critical
+
               echo "[monitoring] Pipeline health check completed."
           env:
             - name: GCP_PROJECT_ID
@@ -54,9 +60,20 @@ tasks:
               value: ml_outputs
             - name: BQ_LOCATION
               value: asia-southeast1
+          volumeMounts:
+            - name: gcp-secret-manager-secrets
+              mountPath: /var/secrets
+              readOnly: true
           resources:
             requests:
               cpu: "500m"
               memory: "1Gi"
             limits:
               memory: "2Gi"
+      volumes:
+        - name: gcp-secret-manager-secrets
+          csi:
+            driver: secrets-store-gke.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: crypto-batch-secrets-gke

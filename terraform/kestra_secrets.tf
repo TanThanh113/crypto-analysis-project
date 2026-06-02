@@ -41,7 +41,9 @@ locals {
     "kestra-gcp-location",
 
     "kestra-basic-auth-username",
-    "kestra-basic-auth-password"
+    "kestra-basic-auth-password",
+
+    "kestra-slack-webhook-url",
   ]
 }
 
