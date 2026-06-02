@@ -42,7 +42,7 @@ tasks:
               python --version
 
               echo "[monitoring] Running pipeline health check..."
-              uv run python /app/batch/pipeline_health_check.py --fail-on-critical
+              uv run python /app/batch/pipeline_health_check.py
 
               echo "[monitoring] Sending Slack alert if needed..."
               uv run python /app/batch/send_slack_health_alert.py \
