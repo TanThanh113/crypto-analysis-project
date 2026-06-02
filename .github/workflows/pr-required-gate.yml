@@ -1,0 +1,201 @@
+name: PR Required Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  detect-changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      docker_required: ${{ steps.filter.outputs.docker_required }}
+      kestra_required: ${{ steps.filter.outputs.kestra_required }}
+      dbt_required: ${{ steps.filter.outputs.dbt_required }}
+      terraform_required: ${{ steps.filter.outputs.terraform_required }}
+      docs_only: ${{ steps.detect_docs.outputs.docs_only }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Detect changed paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            docker_required:
+              - 'local_scripts/**'
+              - 'dbt_transform/**'
+              - 'ml/**'
+              - 'docker/**'
+              - '.github/workflows/docker-build-push.yml'
+            kestra_required:
+              - 'kestra/flows-gke/**'
+              - '.github/workflows/kestra-deploy-gke.yml'
+            dbt_required:
+              - 'dbt_transform/**'
+            terraform_required:
+              - 'terraform/**'
+            docs:
+              - '**/*.md'
+              - 'docs/**'
+              - '.github/pull_request_template.md'
+            non_docs:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!.github/pull_request_template.md'
+
+      - name: Detect docs-only PR
+        id: detect_docs
+        shell: bash
+        run: |
+          if [ "${{ steps.filter.outputs.docs }}" = "true" ] && \
+             [ "${{ steps.filter.outputs.non_docs }}" = "false" ]; then
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+            echo "This is a docs-only PR."
+          else
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            echo "This PR changes non-doc files."
+          fi
+
+  # =================================================================
+  # JOB 2: CỔNG TỔNG ĐỒNG BỘ - ĐỢI VÀ KIỂM TRA TRẠNG THÁI TOÀN CỤC
+  # =================================================================
+  pr-required-gate:
+    name: PR Required Gate
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    permissions:
+      contents: read
+      checks: read
+      actions: read
+      pull-requests: read
+    steps:
+      - name: Wait for required workflow checks
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const sha = context.payload.pull_request
+              ? context.payload.pull_request.head.sha
+              : context.sha;
+
+            // Đọc an toàn biến output từ job detect-changes
+            const dockerRequired = `${{ needs.detect-changes.outputs.docker_required }}` === 'true';
+            const kestraRequired = `${{ needs.detect-changes.outputs.kestra_required }}` === 'true';
+            const docsOnly = `${{ needs.detect-changes.outputs.docs_only }}` === 'true';
+
+            // MẢNG CẤU HÌNH TÊN CÁC CHECK - ĐÃ KHỚP 100% VỚI CODE CỦA BẠN
+            const requiredChecks = [
+              {
+                name: 'Repository quality checks', 
+                required: true,
+                reason: 'Quality checks are always required.'
+              },
+              {
+                name: 'Build and push Docker images',
+                required: dockerRequired,
+                reason: 'Docker preview build is required due to runtime/infrastructure modifications.'
+              },
+              {
+                name: 'Deploy Kestra Helm and flows',
+                required: kestraRequired,
+                reason: 'Kestra orchestrator orchestration update detected.'
+              }
+            ];
+
+            const required = requiredChecks.filter(item => item.required);
+
+            core.info(`PR head SHA: ${sha}`);
+            core.info(`docsOnly=${docsOnly}`);
+            core.info(`dockerRequired=${dockerRequired}`);
+            core.info(`kestraRequired=${kestraRequired}`);
+            core.info(`Required matrix checks: ${required.map(item => item.name).join(', ')}`);
+
+            const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+            async function listCheckRuns() {
+              const runs = await github.paginate(
+                github.rest.checks.listForRef,
+                { owner, repo, ref: sha, per_page: 100 }
+              );
+              return runs;
+            }
+
+            function findLatestCheckRun(checkRuns, checkName) {
+              return checkRuns
+                .filter(run => run.name === checkName)
+                .sort((a, b) => new Date(b.started_at || b.created_at) - new Date(a.started_at || a.created_at))[0];
+            }
+
+            const maxAttempts = 60; // 60 lần quét * 15 giây = 15 phút tối đa
+            const delayMs = 15000;  // Quét lại sau mỗi 15 giây để tránh spam API Rate Limit của GitHub
+
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              const checkRuns = await listCheckRuns();
+              const statuses = required.map(item => {
+                const run = findLatestCheckRun(checkRuns, item.name);
+                return { ...item, run };
+              });
+
+              for (const status of statuses) {
+                if (!status.run) {
+                  core.info(`[Attempt ${attempt}/${maxAttempts}] ${status.name}: NOT_FOUND_YET`);
+                } else {
+                  core.info(`[Attempt ${attempt}/${maxAttempts}] ${status.name}: status=${status.run.status}, conclusion=${status.run.conclusion}`);
+                }
+              }
+
+              const missing = statuses.filter(status => !status.run);
+              const running = statuses.filter(status => status.run && status.run.status !== 'completed');
+              const failed = statuses.filter(status => 
+                status.run && 
+                status.run.status === 'completed' && 
+                !['success', 'skipped', 'neutral'].includes(status.run.conclusion)
+              );
+
+              if (failed.length > 0) {
+                const message = failed.map(s => `${s.name} matrix failed with conclusion=${s.run.conclusion}`).join('\n');
+                core.setFailed(`Required workflow check broken:\n${message}`);
+                return;
+              }
+
+              if (missing.length === 0 && running.length === 0) {
+                core.info('All validated required gate components passed successfully.');
+                return;
+              }
+
+              await sleep(delayMs);
+            }
+
+            const finalCheckRuns = await listCheckRuns();
+            const finalStatuses = required.map(item => {
+              const run = findLatestCheckRun(finalCheckRuns, item.name);
+              return {
+                name: item.name,
+                status: run ? run.status : 'missing',
+                conclusion: run ? run.conclusion : 'missing'
+              };
+            });
+
+            core.setFailed(`Timed out waiting for required status checks.\n` + JSON.stringify(finalStatuses, null, 2));
+
+      - name: Print merge gate summary
+        if: always()
+        run: |
+          echo "=== PR Required Gate Summary ==="
+          echo "Docs only: ${{ needs.detect-changes.outputs.docs_only }}"
+          echo "Docker required: ${{ needs.detect-changes.outputs.docker_required }}"
+          echo "Kestra required: ${{ needs.detect-changes.outputs.kestra_required }}"
+          echo "dbt changed: ${{ needs.detect-changes.outputs.dbt_required }}"
+          echo "Terraform changed: ${{ needs.detect-changes.outputs.terraform_required }}"
