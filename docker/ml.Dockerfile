@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 # Copy uv binary from official uv image
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
+COPY --from=docker.io/astral/uv:latest /uv /uvx /bin/
 
 # System dependencies
 # libgomp1 is needed by LightGBM runtime.
