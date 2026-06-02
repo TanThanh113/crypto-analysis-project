@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
+from uuid import uuid4
+
 import pandas as pd
 import yaml
 
-from uuid import uuid4
 from monitoring.bq_client import BigQueryMonitoringClient
 from monitoring.checks import (
     HealthCheckResult,
@@ -21,6 +24,9 @@ CHECK_REGISTRY = {
     "ge_latest_audit": check_ge_latest_audit,
     "prediction_freshness": check_prediction_freshness,
 }
+
+
+DEFAULT_RUN_ID_FILE = "/tmp/kestra_health_run_id.txt"
 
 
 class PipelineHealthService:
@@ -52,17 +58,30 @@ class PipelineHealthService:
         check_fn = CHECK_REGISTRY[check_type]
         return check_fn(bq=self.bq, spec=spec)
 
+    def _write_run_id_file(self, run_id: str) -> None:
+        run_id_file = Path(os.environ.get("HEALTH_RUN_ID_FILE", DEFAULT_RUN_ID_FILE))
+        run_id_file.parent.mkdir(parents=True, exist_ok=True)
+
+        tmp_file = run_id_file.with_suffix(".tmp")
+        tmp_file.write_text(run_id, encoding="utf-8")
+        tmp_file.replace(run_id_file)
+
+        print(f"[monitoring] Wrote health run_id to {run_id_file}")
+
     def run(self, fail_on_critical: bool, write_results: bool = True) -> int:
         specs = self.load_specs()
-
         run_id = f"health-{uuid4().hex}"
+
+        print(f"[monitoring] Health check run_id={run_id}")
+        self._write_run_id_file(run_id)
 
         results = []
         for spec in specs:
-            print(f"[monitoring] Running check: {spec['id']} ({spec['type']})")
-            spec = dict(spec)
-            spec["run_id"] = run_id
-            result = self.run_check(spec)
+            check_spec = dict(spec)
+            check_spec["run_id"] = run_id
+
+            print(f"[monitoring] Running check: {check_spec['id']} ({check_spec['type']})")
+            result = self.run_check(check_spec)
             print(
                 f"[monitoring] {result.check_id}: "
                 f"success={result.success}, severity={result.severity}, "
