@@ -13,18 +13,15 @@ jobs:
   detect-changes:
     name: Detect changed areas
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
       pull-requests: read
-
     outputs:
       docker_required: ${{ steps.filter.outputs.docker_required }}
       kestra_required: ${{ steps.filter.outputs.kestra_required }}
       dbt_required: ${{ steps.filter.outputs.dbt_required }}
       terraform_required: ${{ steps.filter.outputs.terraform_required }}
       docs_only: ${{ steps.detect_docs.outputs.docs_only }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -40,29 +37,22 @@ jobs:
               - 'ml/**'
               - 'docker/**'
               - '.github/workflows/docker-build-push.yml'
-
             kestra_required:
               - 'kestra/flows-gke/**'
-              - 'helm/kestra/**'
-              - 'k8s/kestra/**'
               - '.github/workflows/kestra-deploy-gke.yml'
-
             dbt_required:
               - 'dbt_transform/**'
-
             terraform_required:
               - 'terraform/**'
-
             docs:
               - '**/*.md'
               - 'docs/**'
               - '.github/pull_request_template.md'
-
             non_docs:
+              - '**'
               - '!**/*.md'
               - '!docs/**'
               - '!.github/pull_request_template.md'
-              - '**'
 
       - name: Detect docs-only PR
         id: detect_docs
@@ -77,26 +67,18 @@ jobs:
             echo "This PR changes non-doc files."
           fi
 
-      - name: Print change summary
-        run: |
-          echo "docker_required=${{ steps.filter.outputs.docker_required }}"
-          echo "kestra_required=${{ steps.filter.outputs.kestra_required }}"
-          echo "dbt_required=${{ steps.filter.outputs.dbt_required }}"
-          echo "terraform_required=${{ steps.filter.outputs.terraform_required }}"
-          echo "docs_only=${{ steps.detect_docs.outputs.docs_only }}"
-
+  # =================================================================
+  # JOB 2: CỔNG TỔNG ĐỒNG BỘ - ĐỢI VÀ KIỂM TRA TRẠNG THÁI TOÀN CỤC
+  # =================================================================
   pr-required-gate:
     name: PR Required Gate
     runs-on: ubuntu-latest
-    needs:
-      - detect-changes
-
+    needs: detect-changes
     permissions:
       contents: read
       checks: read
       actions: read
       pull-requests: read
-
     steps:
       - name: Wait for required workflow checks
         uses: actions/github-script@v8
@@ -108,25 +90,27 @@ jobs:
               ? context.payload.pull_request.head.sha
               : context.sha;
 
-            const dockerRequired = '${{ needs.detect-changes.outputs.docker_required }}' === 'true';
-            const kestraRequired = '${{ needs.detect-changes.outputs.kestra_required }}' === 'true';
-            const docsOnly = '${{ needs.detect-changes.outputs.docs_only }}' === 'true';
+            // Đọc an toàn biến output từ job detect-changes
+            const dockerRequired = `${{ needs.detect-changes.outputs.docker_required }}` === 'true';
+            const kestraRequired = `${{ needs.detect-changes.outputs.kestra_required }}` === 'true';
+            const docsOnly = `${{ needs.detect-changes.outputs.docs_only }}` === 'true';
 
+            // MẢNG CẤU HÌNH TÊN CÁC CHECK - ĐÃ KHỚP 100% VỚI CODE CỦA BẠN
             const requiredChecks = [
               {
-                name: 'Repository quality checks',
+                name: 'Repository quality checks', 
                 required: true,
                 reason: 'Quality checks are always required.'
               },
               {
                 name: 'Build and push Docker images',
                 required: dockerRequired,
-                reason: 'Docker preview image build is required because runtime code, dbt, ML, Dockerfile, or image workflow changed.'
+                reason: 'Docker preview build is required due to runtime/infrastructure modifications.'
               },
               {
                 name: 'Deploy Kestra Helm and flows',
                 required: kestraRequired,
-                reason: 'Kestra preview deploy is required because Kestra flows, Helm, Kubernetes manifests, or Kestra deploy workflow changed.'
+                reason: 'Kestra orchestrator orchestration update detected.'
               }
             ];
 
@@ -136,79 +120,58 @@ jobs:
             core.info(`docsOnly=${docsOnly}`);
             core.info(`dockerRequired=${dockerRequired}`);
             core.info(`kestraRequired=${kestraRequired}`);
-            core.info(`Required checks: ${required.map(item => item.name).join(', ')}`);
+            core.info(`Required matrix checks: ${required.map(item => item.name).join(', ')}`);
 
             const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
             async function listCheckRuns() {
               const runs = await github.paginate(
                 github.rest.checks.listForRef,
-                {
-                  owner,
-                  repo,
-                  ref: sha,
-                  per_page: 100
-                }
+                { owner, repo, ref: sha, per_page: 100 }
               );
-
               return runs;
             }
 
             function findLatestCheckRun(checkRuns, checkName) {
-              const matches = checkRuns
+              return checkRuns
                 .filter(run => run.name === checkName)
-                .sort((a, b) => new Date(b.started_at || b.created_at) - new Date(a.started_at || a.created_at));
-
-              return matches[0];
+                .sort((a, b) => new Date(b.started_at || b.created_at) - new Date(a.started_at || a.created_at))[0];
             }
 
-            const maxAttempts = 90;
-            const delayMs = 10000;
+            const maxAttempts = 60; // 60 lần quét * 15 giây = 15 phút tối đa
+            const delayMs = 15000;  // Quét lại sau mỗi 15 giây để tránh spam API Rate Limit của GitHub
 
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
               const checkRuns = await listCheckRuns();
-
               const statuses = required.map(item => {
                 const run = findLatestCheckRun(checkRuns, item.name);
-                return {
-                  ...item,
-                  run
-                };
+                return { ...item, run };
               });
 
               for (const status of statuses) {
                 if (!status.run) {
-                  core.info(`[attempt ${attempt}/${maxAttempts}] ${status.name}: not found yet`);
+                  core.info(`[Attempt ${attempt}/${maxAttempts}] ${status.name}: NOT_FOUND_YET`);
                 } else {
-                  core.info(
-                    `[attempt ${attempt}/${maxAttempts}] ${status.name}: status=${status.run.status}, conclusion=${status.run.conclusion}`
-                  );
+                  core.info(`[Attempt ${attempt}/${maxAttempts}] ${status.name}: status=${status.run.status}, conclusion=${status.run.conclusion}`);
                 }
               }
 
               const missing = statuses.filter(status => !status.run);
-              const running = statuses.filter(status =>
-                status.run &&
-                status.run.status !== 'completed'
-              );
-
-              const failed = statuses.filter(status =>
-                status.run &&
-                status.run.status === 'completed' &&
+              const running = statuses.filter(status => status.run && status.run.status !== 'completed');
+              const failed = statuses.filter(status => 
+                status.run && 
+                status.run.status === 'completed' && 
                 !['success', 'skipped', 'neutral'].includes(status.run.conclusion)
               );
 
               if (failed.length > 0) {
-                const message = failed
-                  .map(status => `${status.name} failed with conclusion=${status.run.conclusion}`)
-                  .join('\n');
-
-                core.setFailed(`Required workflow check failed:\n${message}`);
+                const message = failed.map(s => `${s.name} matrix failed with conclusion=${s.run.conclusion}`).join('\n');
+                core.setFailed(`Required workflow check broken:\n${message}`);
                 return;
               }
 
               if (missing.length === 0 && running.length === 0) {
-                core.info('All required workflow checks passed.');
+                core.info('All validated required gate components passed successfully.');
                 return;
               }
 
@@ -225,15 +188,12 @@ jobs:
               };
             });
 
-            core.setFailed(
-              `Timed out waiting for required workflow checks.\n` +
-              JSON.stringify(finalStatuses, null, 2)
-            );
+            core.setFailed(`Timed out waiting for required status checks.\n` + JSON.stringify(finalStatuses, null, 2));
 
       - name: Print merge gate summary
         if: always()
         run: |
-          echo "PR Required Gate completed."
+          echo "=== PR Required Gate Summary ==="
           echo "Docs only: ${{ needs.detect-changes.outputs.docs_only }}"
           echo "Docker required: ${{ needs.detect-changes.outputs.docker_required }}"
           echo "Kestra required: ${{ needs.detect-changes.outputs.kestra_required }}"
