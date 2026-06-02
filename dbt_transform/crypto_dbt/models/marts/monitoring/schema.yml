@@ -1,0 +1,66 @@
+version: 2
+
+models:
+  - name: mart_monitoring_pipeline_health_latest
+    description: Latest pipeline health check run summary.
+    columns:
+      - name: run_id
+        tests:
+          - not_null
+      - name: latest_check_ts
+        tests:
+          - not_null
+      - name: pipeline_health_status
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['HEALTHY', 'WARNING', 'FAILED']
+
+  - name: mart_monitoring_pipeline_health_recent
+    description: Recent pipeline health check run summaries for monitoring dashboard.
+    columns:
+      - name: run_id
+        tests:
+          - not_null
+      - name: latest_check_ts
+        tests:
+          - not_null
+      - name: pipeline_health_status
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['HEALTHY', 'WARNING', 'FAILED']
+
+  - name: mart_monitoring_pipeline_failed_checks
+    description: Recent failed pipeline health checks.
+    columns:
+      - name: check_ts
+        tests:
+          - not_null
+      - name: run_id
+        tests:
+          - not_null
+      - name: check_id
+        tests:
+          - not_null
+      - name: severity
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['critical', 'warning']
+
+  - name: mart_monitoring_ge_audit_latest
+    description: Latest Great Expectations audit summary.
+    columns:
+      - name: latest_audit_ts
+        tests:
+          - not_null
+      - name: ge_audit_status
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['HEALTHY', 'WARNING', 'FAILED']
