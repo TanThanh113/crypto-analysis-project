@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import yaml
 
+from uuid import uuid4
 from monitoring.bq_client import BigQueryMonitoringClient
 from monitoring.checks import (
     HealthCheckResult,
@@ -54,9 +55,13 @@ class PipelineHealthService:
     def run(self, fail_on_critical: bool, write_results: bool = True) -> int:
         specs = self.load_specs()
 
+        run_id = f"health-{uuid4().hex}"
+
         results = []
         for spec in specs:
             print(f"[monitoring] Running check: {spec['id']} ({spec['type']})")
+            spec = dict(spec)
+            spec["run_id"] = run_id
             result = self.run_check(spec)
             print(
                 f"[monitoring] {result.check_id}: "

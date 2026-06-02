@@ -37,8 +37,17 @@ class HealthAlertService:
     # Load recent health results from BigQuery -> DataFrame.
     def load_recent_health_results(self, recent_minutes: int) -> pd.DataFrame:
         sql = f"""
+        WITH latest_run AS (
+          SELECT run_id
+          FROM {self._table_ref("pipeline_health_check_results")}
+          WHERE check_ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {int(recent_minutes)} MINUTE)
+            AND run_id IS NOT NULL
+          ORDER BY check_ts DESC
+          LIMIT 1
+        )
         SELECT
           check_ts,
+          run_id,
           check_id,
           check_type,
           severity,
@@ -47,7 +56,7 @@ class HealthAlertService:
           threshold,
           message
         FROM {self._table_ref("pipeline_health_check_results")}
-        WHERE check_ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {int(recent_minutes)} MINUTE)
+        WHERE run_id = (SELECT run_id FROM latest_run)
         ORDER BY check_ts DESC
         """
         return self.bq.query(sql, location=self.settings.location).result().to_dataframe()

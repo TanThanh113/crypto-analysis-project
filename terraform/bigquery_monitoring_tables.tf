@@ -22,6 +22,7 @@ resource "google_bigquery_table" "pipeline_health_check_results" {
   }
 
   clustering = [
+    "run_id",
     "severity",
     "success",
     "check_id"
@@ -40,6 +41,12 @@ resource "google_bigquery_table" "pipeline_health_check_results" {
     "type": "STRING",
     "mode": "REQUIRED",
     "description": "Unique health check identifier, for example dashboard_data_freshness."
+  },
+  {
+  "name": "run_id",
+  "type": "STRING",
+  "mode": "NULLABLE",
+  "description": "Unique id for one pipeline health check run."
   },
   {
     "name": "check_type",
