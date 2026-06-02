@@ -10,6 +10,7 @@ from monitoring.settings import MonitoringSettings
 
 HEALTH_RESULT_COLUMNS = [
     "check_ts",
+    "run_id",
     "check_id",
     "check_type",
     "severity",
@@ -22,6 +23,7 @@ HEALTH_RESULT_COLUMNS = [
 
 HEALTH_RESULT_REQUIRED_COLUMNS = [
     "check_ts",
+    "run_id",
     "check_id",
     "check_type",
     "severity",

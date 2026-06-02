@@ -24,6 +24,7 @@ GOOD_STATUS_VALUES = {
 @dataclass
 class HealthCheckResult:
     check_ts: datetime
+    run_id: str
     check_id: str
     check_type: str
     severity: str
@@ -43,6 +44,7 @@ def now_utc() -> datetime:
 
 def make_result(
     *,
+    run_id: str,
     check_id: str,
     check_type: str,
     severity: str,
@@ -54,6 +56,7 @@ def make_result(
 ) -> HealthCheckResult:
     return HealthCheckResult(
         check_ts=now_utc(),
+        run_id=run_id,
         check_id=check_id,
         check_type=check_type,
         severity=severity,
@@ -78,6 +81,7 @@ def check_table_non_empty(
 
     if not bq.table_exists(dataset, table):
         return make_result(
+            run_id=spec["run_id"],
             check_id=check_id,
             check_type="table_non_empty",
             severity=severity,
@@ -94,6 +98,7 @@ def check_table_non_empty(
     success = row_count >= min_rows
 
     return make_result(
+        run_id=spec["run_id"],
         check_id=check_id,
         check_type="table_non_empty",
         severity=severity,
@@ -163,6 +168,7 @@ def check_data_freshness_mart(
 
     if not bq.table_exists(dataset, table):
         return make_result(
+            run_id=spec["run_id"],
             check_id=check_id,
             check_type="data_freshness_mart",
             severity=severity,
@@ -177,6 +183,7 @@ def check_data_freshness_mart(
 
     if df.empty:
         return make_result(
+            run_id=spec["run_id"],
             check_id=check_id,
             check_type="data_freshness_mart",
             severity=severity,
@@ -206,6 +213,7 @@ def check_data_freshness_mart(
     )
 
     return make_result(
+        run_id=spec["run_id"],
         check_id=check_id,
         check_type="data_freshness_mart",
         severity=severity,
@@ -239,6 +247,7 @@ def check_ge_latest_audit(
 
     if not bq.table_exists(dataset, table):
         return make_result(
+            run_id=spec["run_id"],
             check_id=check_id,
             check_type="ge_latest_audit",
             severity=severity,
@@ -267,6 +276,7 @@ def check_ge_latest_audit(
     success = total_checks > 0 and failed_critical <= max_failed_critical
 
     return make_result(
+        run_id=spec["run_id"],
         check_id=check_id,
         check_type="ge_latest_audit",
         severity=severity,
@@ -303,6 +313,7 @@ def check_prediction_freshness(
 
     if not bq.table_exists(dataset, table):
         return make_result(
+            run_id=spec["run_id"],
             check_id=check_id,
             check_type="prediction_freshness",
             severity=severity,
@@ -326,6 +337,7 @@ def check_prediction_freshness(
 
     if row_count == 0 or pd.isna(latest_prediction_ts):
         return make_result(
+            run_id=spec["run_id"],
             check_id=check_id,
             check_type="prediction_freshness",
             severity=severity,
@@ -343,6 +355,7 @@ def check_prediction_freshness(
     success = age_hours <= max_age_hours
 
     return make_result(
+        run_id=spec["run_id"],
         check_id=check_id,
         check_type="prediction_freshness",
         severity=severity,
