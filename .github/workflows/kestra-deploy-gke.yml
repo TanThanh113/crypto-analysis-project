@@ -8,6 +8,7 @@ env:
   KESTRA_NAMESPACE: kestra
   KESTRA_SERVER: http://127.0.0.1:8080
   PROD_FLOW_NAMESPACE: crypto.data_engineering
+  KESTRACTL_VERSION: ${{ vars.KESTRACTL_VERSION }}
 
 on:
   push:
@@ -242,6 +243,34 @@ jobs:
           print(f"Generated {count} preview flow file(s) in {target_root}")
           PY
 
+          python - <<'PY'
+          from __future__ import annotations
+
+          import pathlib
+          import sys
+          import yaml
+
+          target_root = pathlib.Path("${{ steps.meta.outputs.flow_dir }}")
+          failed = False
+
+          for flow_file in sorted(target_root.rglob("*.yml")) + sorted(target_root.rglob("*.yaml")):
+              with flow_file.open("r", encoding="utf-8") as f:
+                  flow = yaml.safe_load(f)
+
+              if not isinstance(flow, dict):
+                  continue
+
+              labels = flow.get("labels")
+              if labels is not None and not isinstance(labels, dict):
+                  print(f"Invalid top-level labels in {flow_file}: expected mapping, got {type(labels).__name__}")
+                  failed = True
+
+          if failed:
+              sys.exit(1)
+
+          print("Preview flow labels validation passed.")
+          PY
+
           echo "Preview flow files:"
           find "${{ steps.meta.outputs.flow_dir }}" -type f -name '*.yml' -o -name '*.yaml'
 
@@ -249,7 +278,10 @@ jobs:
         if: steps.filter.outputs.kestra_flows == 'true'
         run: |
           set -euo pipefail
-          curl -fsSL https://raw.githubusercontent.com/kestra-io/kestractl/main/install-scripts/install.sh | INSTALL_DIR='./' bash
+
+          echo "Installing kestractl version: ${KESTRACTL_VERSION:-latest}"
+          curl -fsSL https://raw.githubusercontent.com/kestra-io/kestractl/main/install-scripts/install.sh | VERSION="${KESTRACTL_VERSION:-latest}" INSTALL_DIR='./' bash
+          ./kestractl version || true
           ./kestractl --help
           ./kestractl flows deploy --help
 
@@ -275,6 +307,8 @@ jobs:
           fi
 
           echo "::group::Kestra cluster debug"
+          kubectl -n "${KESTRA_NAMESPACE}" get deployment kestra-webserver -o jsonpath='{.spec.template.spec.containers[0].image}' || true
+          echo
           kubectl -n "${KESTRA_NAMESPACE}" get pods -o wide || true
           kubectl -n "${KESTRA_NAMESPACE}" get svc -o wide || true
           kubectl -n "${KESTRA_NAMESPACE}" get endpoints || true
