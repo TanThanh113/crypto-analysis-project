@@ -245,45 +245,92 @@ jobs:
           echo "Preview flow files:"
           find "${{ steps.meta.outputs.flow_dir }}" -type f -name '*.yml' -o -name '*.yaml'
 
-      - name: Port-forward Kestra webserver
-        if: steps.filter.outputs.kestra_flows == 'true'
-        run: |
-          kubectl port-forward deployment/kestra-webserver 8080:8080 -n ${KESTRA_NAMESPACE} > /tmp/kestra-port-forward.log 2>&1 &
-          echo $! > /tmp/kestra-port-forward.pid
-
-          for i in $(seq 1 30); do
-            if curl -fsS ${KESTRA_SERVER} > /dev/null; then
-              echo "Kestra is reachable."
-              exit 0
-            fi
-            echo "Waiting for Kestra..."
-            sleep 5
-          done
-
-          echo "Kestra did not become reachable."
-          cat /tmp/kestra-port-forward.log || true
-          exit 1
-
-      - name: Check Kestra webserver authentication
-        if: steps.filter.outputs.kestra_flows == 'true'
-        run: |
-          curl -fsS \
-            -u "${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}:${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}" \
-            ${KESTRA_SERVER}/ > /dev/null
-
       - name: Install kestractl
         if: steps.filter.outputs.kestra_flows == 'true'
         run: |
+          set -euo pipefail
           curl -fsSL https://raw.githubusercontent.com/kestra-io/kestractl/main/install-scripts/install.sh | INSTALL_DIR='./' bash
           ./kestractl --help
           ./kestractl flows deploy --help
 
-      - name: Deploy Kestra flows
+      # Keep port-forward, readiness check, auth check, and flow deploy in the same step.
+      # This avoids losing the background kubectl port-forward between GitHub Actions steps.
+      - name: Deploy Kestra flows through GKE port-forward
         if: steps.filter.outputs.kestra_flows == 'true'
+        shell: bash
         env:
           KESTRACTL_USERNAME: ${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}
           KESTRACTL_PASSWORD: ${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}
         run: |
+          set -euo pipefail
+
+          if [ -z "${KESTRACTL_USERNAME:-}" ]; then
+            echo "Missing required secret: KESTRA_BASIC_AUTH_USERNAME"
+            exit 1
+          fi
+
+          if [ -z "${KESTRACTL_PASSWORD:-}" ]; then
+            echo "Missing required secret: KESTRA_BASIC_AUTH_PASSWORD"
+            exit 1
+          fi
+
+          echo "::group::Kestra cluster debug"
+          kubectl -n "${KESTRA_NAMESPACE}" get pods -o wide || true
+          kubectl -n "${KESTRA_NAMESPACE}" get svc -o wide || true
+          kubectl -n "${KESTRA_NAMESPACE}" get endpoints || true
+          echo "::endgroup::"
+
+          kubectl -n "${KESTRA_NAMESPACE}" rollout status deployment/kestra-webserver --timeout=5m
+
+          kubectl -n "${KESTRA_NAMESPACE}" port-forward deployment/kestra-webserver 8080:8080 > /tmp/kestra-port-forward.log 2>&1 &
+          PF_PID=$!
+
+          cleanup() {
+            if kill -0 "${PF_PID}" 2>/dev/null; then
+              kill "${PF_PID}" 2>/dev/null || true
+              wait "${PF_PID}" 2>/dev/null || true
+            fi
+          }
+          trap cleanup EXIT
+
+          echo "Waiting for Kestra API on ${KESTRA_SERVER}..."
+          KESTRA_READY="false"
+
+          for i in $(seq 1 60); do
+            if ! kill -0 "${PF_PID}" 2>/dev/null; then
+              echo "kubectl port-forward exited before Kestra became reachable."
+              echo "::group::port-forward log"
+              cat /tmp/kestra-port-forward.log || true
+              echo "::endgroup::"
+              exit 1
+            fi
+
+            if curl -fsS \
+              -u "${KESTRACTL_USERNAME}:${KESTRACTL_PASSWORD}" \
+              "${KESTRA_SERVER}/" > /dev/null; then
+              KESTRA_READY="true"
+              break
+            fi
+
+            echo "Waiting for Kestra API... attempt ${i}/60"
+            sleep 5
+          done
+
+          if [ "${KESTRA_READY}" != "true" ]; then
+            echo "Kestra API did not become reachable at ${KESTRA_SERVER}."
+            echo "::group::port-forward log"
+            cat /tmp/kestra-port-forward.log || true
+            echo "::endgroup::"
+            echo "::group::Kestra debug after failure"
+            kubectl -n "${KESTRA_NAMESPACE}" get pods -o wide || true
+            kubectl -n "${KESTRA_NAMESPACE}" get svc -o wide || true
+            kubectl -n "${KESTRA_NAMESPACE}" get endpoints || true
+            echo "::endgroup::"
+            exit 1
+          fi
+
+          echo "Kestra API is reachable."
+
           echo "Deploying Kestra flows..."
           echo "Mode: ${{ steps.meta.outputs.deploy_mode }}"
           echo "Namespace: ${{ steps.meta.outputs.flow_namespace }}"
