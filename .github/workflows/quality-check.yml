@@ -2,6 +2,8 @@ name: Quality Check
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  REGION: ${{ vars.GCP_LOCATION }}
   
 on:
   push:
@@ -20,6 +22,21 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+
+      - name: Validate GCP repository variables
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${PROJECT_ID:-}" ]; then
+            echo "Missing required GitHub repository variable: GCP_PROJECT_ID"
+            exit 1
+          fi
+
+          if [ -z "${REGION:-}" ]; then
+            echo "Missing required GitHub repository variable: GCP_LOCATION"
+            exit 1
+          fi
 
       - name: Basic secret scan
         run: |
@@ -121,10 +138,10 @@ jobs:
       - name: dbt parse
         working-directory: dbt_transform
         env:
-          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_PROJECT_ID: ${{ env.PROJECT_ID }}
           BQ_ANALYTICS_DATASET: dbt_quants_dev
           BQ_ML_OUTPUTS_DATASET: ml_outputs
-          BQ_LOCATION: asia-southeast1
+          BQ_LOCATION: ${{ env.REGION }}
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/nonexistent-gcp-key.json
         run: |
           uv sync --locked

@@ -9,7 +9,6 @@ env:
   PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
   REGION: ${{ vars.GCP_LOCATION }}
   ARTIFACT_REPO: crypto-docker
-  IMAGE_BASE: ${{ vars.GCP_LOCATION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/crypto-docker
 
 jobs:
   cleanup-preview-images:
@@ -24,6 +23,32 @@ jobs:
       id-token: write
 
     steps:
+      - name: Validate GCP repository variables
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${PROJECT_ID:-}" ]; then
+            echo "Missing required GitHub repository variable: GCP_PROJECT_ID"
+            exit 1
+          fi
+
+          if [ -z "${REGION:-}" ]; then
+            echo "Missing required GitHub repository variable: GCP_LOCATION"
+            exit 1
+          fi
+
+          REGISTRY_HOST="${REGION}-docker.pkg.dev"
+          IMAGE_BASE="${REGISTRY_HOST}/${PROJECT_ID}/${ARTIFACT_REPO}"
+
+          if [ "${IMAGE_BASE}" = "-docker.pkg.dev//${ARTIFACT_REPO}" ]; then
+            echo "Invalid Artifact Registry image base: ${IMAGE_BASE}"
+            exit 1
+          fi
+
+          echo "REGISTRY_HOST=${REGISTRY_HOST}" >> "$GITHUB_ENV"
+          echo "IMAGE_BASE=${IMAGE_BASE}" >> "$GITHUB_ENV"
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:

@@ -30,6 +30,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
+      - name: Validate GCP repository variables
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${PROJECT_ID:-}" ]; then
+            echo "Missing required GitHub repository variable: GCP_PROJECT_ID"
+            exit 1
+          fi
+
+          if [ -z "${REGION:-}" ]; then
+            echo "Missing required GitHub repository variable: GCP_LOCATION"
+            exit 1
+          fi
+
       - name: Compute preview namespace
         id: meta
         shell: bash

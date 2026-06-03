@@ -125,7 +125,7 @@ ${GCP_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/crypto-docker/crypto-ml:latest
 
 Runtime project, bucket, dataset, and broker values should come from environment
 variables or the orchestrator secret/config layer, not from source code. Use
-`docs/runtime-config.example.env` as the non-secret template.
+`docs/runtime-config.example.txt` as the non-secret template.
 
 Important variables:
 

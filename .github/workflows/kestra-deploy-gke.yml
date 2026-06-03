@@ -8,7 +8,6 @@ env:
   KESTRA_NAMESPACE: kestra
   KESTRA_SERVER: http://127.0.0.1:8080
   PROD_FLOW_NAMESPACE: crypto.data_engineering
-  IMAGE_BASE: ${{ vars.GCP_LOCATION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/crypto-docker
 
 on:
   push:
@@ -45,6 +44,32 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+
+      - name: Validate GCP repository variables
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${PROJECT_ID:-}" ]; then
+            echo "Missing required GitHub repository variable: GCP_PROJECT_ID"
+            exit 1
+          fi
+
+          if [ -z "${REGION:-}" ]; then
+            echo "Missing required GitHub repository variable: GCP_LOCATION"
+            exit 1
+          fi
+
+          REGISTRY_HOST="${REGION}-docker.pkg.dev"
+          IMAGE_BASE="${REGISTRY_HOST}/${PROJECT_ID}/crypto-docker"
+
+          if [ "${IMAGE_BASE}" = "-docker.pkg.dev//crypto-docker" ]; then
+            echo "Invalid Artifact Registry image base: ${IMAGE_BASE}"
+            exit 1
+          fi
+
+          echo "REGISTRY_HOST=${REGISTRY_HOST}" >> "$GITHUB_ENV"
+          echo "IMAGE_BASE=${IMAGE_BASE}" >> "$GITHUB_ENV"
 
       - name: Check for changed paths
         uses: dorny/paths-filter@v3
