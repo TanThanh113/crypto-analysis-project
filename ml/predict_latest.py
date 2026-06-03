@@ -586,6 +586,20 @@ def parse_args() -> argparse.Namespace:
 
     return parser.parse_args()
 
+def read_env_with_legacy(primary_env: str, legacy_env: Optional[str] = None) -> Optional[str]:
+    primary_value = os.environ.get(primary_env)
+    if primary_value:
+        return primary_value
+
+    if legacy_env:
+        legacy_value = os.environ.get(legacy_env)
+        if legacy_value:
+            logging.warning("%s is deprecated; use %s instead.", legacy_env, primary_env)
+            return legacy_value
+
+    return None
+
+
 def resolve_artifact_gcs_uri(config: Dict[str, Any], cli_artifact_gcs_uri: Optional[str]) -> Optional[str]:
     if cli_artifact_gcs_uri:
         return cli_artifact_gcs_uri
@@ -595,8 +609,9 @@ def resolve_artifact_gcs_uri(config: Dict[str, Any], cli_artifact_gcs_uri: Optio
     if explicit_uri:
         return explicit_uri
 
-    bucket_env = artifact.get("gcs_bucket_env", "GCP_BUCKET_NAME")
-    bucket_name = os.environ.get(bucket_env)
+    bucket_env = artifact.get("gcs_bucket_env", "GCS_BUCKET_NAME")
+    legacy_bucket_env = artifact.get("legacy_gcs_bucket_env", "GCP_BUCKET_NAME")
+    bucket_name = read_env_with_legacy(bucket_env, legacy_bucket_env)
     gcs_prefix = artifact.get("gcs_prefix")
 
     if bucket_name and gcs_prefix:

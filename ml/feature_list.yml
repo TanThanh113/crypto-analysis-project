@@ -119,6 +119,7 @@ prediction:
 # Product storage
 artifact:
   storage_mode: gcs
-  gcs_bucket_env: GCP_BUCKET_NAME
+  gcs_bucket_env: GCS_BUCKET_NAME
+  legacy_gcs_bucket_env: GCP_BUCKET_NAME
   gcs_prefix: ml-artifacts/crypto_direction_lgbm_v1
   latest_manifest_name: latest_model.json

@@ -3,7 +3,7 @@ version: 2
 sources:
   # Raw data (Batch)
   - name: raw_crypto
-    database: project-lambda-crypto
+    database: "{{ env_var('GCP_PROJECT_ID') }}"
     schema: raw_crypto_batch
     tables:
       - name: reddit_sentiment_raw
@@ -19,7 +19,7 @@ sources:
 
   # Streaming data
   - name: streaming_crypto
-    database: project-lambda-crypto
+    database: "{{ env_var('GCP_PROJECT_ID') }}"
     schema: crypto_analytics_dataset
     tables:
       - name: candlestick_1min

@@ -1,8 +1,5 @@
 FROM python:3.12-slim
 
-# Copy uv binary from official uv image
-FROM python:3.12-slim
-
 # Copy uv binary directly from Docker Hub official image
 COPY --from=docker.io/astral/uv:latest /uv /uvx /bin/
 

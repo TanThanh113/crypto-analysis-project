@@ -25,8 +25,8 @@ logging.basicConfig(
     stream=sys.stdout
 )
 
-COINGECKO_API_KEY = os.getenv("COINGECKO_API_KEY").strip()
-ARKHAM_API_KEY = os.getenv("ARKHAM_API_KEY").strip()
+COINGECKO_API_KEY = os.getenv("COINGECKO_API_KEY", "").strip()
+ARKHAM_API_KEY = os.getenv("ARKHAM_API_KEY", "").strip()
 
 if COINGECKO_API_KEY:
     logging.info("✅ CoinGecko API Key has been identified. The API is being used to retrieve data (Safe Mode).")

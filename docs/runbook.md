@@ -48,8 +48,8 @@ gcloud auth configure-docker asia-southeast1-docker.pkg.dev
 ### Tag images
 
 ```bash
-export PROJECT_ID=project-lambda-crypto
-export REGION=asia-southeast1
+export PROJECT_ID="${GCP_PROJECT_ID}"
+export REGION="${GCP_LOCATION:-asia-southeast1}"
 export AR_REPO=crypto-docker
 export AR_BASE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}"
 
@@ -116,12 +116,12 @@ Important:
 
 ```bash
 docker run --rm \
-  -e GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/kafka_connect_key.json \
-  -e GCP_PROJECT_ID=project-lambda-crypto \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/app/adc.json \
+  -e GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
   -e BQ_ANALYTICS_DATASET=dbt_quants_dev \
   -e BQ_ML_OUTPUTS_DATASET=ml_outputs \
   -e BQ_LOCATION=asia-southeast1 \
-  -v ~/crypto-analysis-project/local_scripts/streaming/secrets:/app/secrets:ro \
+  -v "${GOOGLE_APPLICATION_CREDENTIALS}:/app/adc.json:ro" \
   crypto-dbt:local \
   uv run dbt debug
 ```
@@ -156,12 +156,12 @@ uv run dbt build \
 
 ```bash
 docker run --rm \
-  -e GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/kafka_connect_key.json \
-  -e GCP_PROJECT_ID=project-lambda-crypto \
-  -e GCP_BUCKET_NAME=crypto-raw-archive-unique-6451 \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/app/adc.json \
+  -e GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
+  -e GCS_BUCKET_NAME="${GCS_BUCKET_NAME}" \
   -e BQ_ANALYTICS_DATASET=dbt_quants_dev \
   -e BQ_ML_OUTPUTS_DATASET=ml_outputs \
-  -v ~/crypto-analysis-project/local_scripts/streaming/secrets:/app/secrets:ro \
+  -v "${GOOGLE_APPLICATION_CREDENTIALS}:/app/adc.json:ro" \
   crypto-ml:local \
   python train_model.py \
     --config feature_list.yml \
@@ -183,8 +183,8 @@ Training should:
 ### Verify artifact in GCS
 
 ```bash
-gcloud storage ls gs://crypto-raw-archive-unique-6451/ml-artifacts/crypto_direction_lgbm_v1/
-gcloud storage cat gs://crypto-raw-archive-unique-6451/ml-artifacts/crypto_direction_lgbm_v1/latest_model.json
+gcloud storage ls gs://${GCS_BUCKET_NAME}/ml-artifacts/crypto_direction_lgbm_v1/
+gcloud storage cat gs://${GCS_BUCKET_NAME}/ml-artifacts/crypto_direction_lgbm_v1/latest_model.json
 ```
 
 ---
@@ -195,12 +195,12 @@ gcloud storage cat gs://crypto-raw-archive-unique-6451/ml-artifacts/crypto_direc
 
 ```bash
 docker run --rm \
-  -e GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/kafka_connect_key.json \
-  -e GCP_PROJECT_ID=project-lambda-crypto \
-  -e GCP_BUCKET_NAME=crypto-raw-archive-unique-6451 \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/app/adc.json \
+  -e GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
+  -e GCS_BUCKET_NAME="${GCS_BUCKET_NAME}" \
   -e BQ_ANALYTICS_DATASET=dbt_quants_dev \
   -e BQ_ML_OUTPUTS_DATASET=ml_outputs \
-  -v ~/crypto-analysis-project/local_scripts/streaming/secrets:/app/secrets:ro \
+  -v "${GOOGLE_APPLICATION_CREDENTIALS}:/app/adc.json:ro" \
   crypto-ml:local \
   python predict_latest.py \
     --config feature_list.yml \
@@ -249,9 +249,9 @@ master/
 Production flows use Artifact Registry images:
 
 ```text
-asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
-asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-dbt:latest
-asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-ml:latest
+${GCP_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/crypto-docker/crypto-batch:latest
+${GCP_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/crypto-docker/crypto-dbt:latest
+${GCP_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/crypto-docker/crypto-ml:latest
 ```
 
 ### Recommended test order
@@ -278,7 +278,7 @@ SELECT
   f1_macro,
   auc_ovr,
   evaluated_at
-FROM `project-lambda-crypto.dbt_quants_dev.mart_ml_model_metrics`
+FROM `${GCP_PROJECT_ID}.dbt_quants_dev.mart_ml_model_metrics`
 ORDER BY evaluated_at DESC
 LIMIT 20;
 ```
@@ -289,7 +289,7 @@ LIMIT 20;
 SELECT
   symbol,
   COUNT(*) AS rows
-FROM `project-lambda-crypto.dbt_quants_dev.mart_ml_prediction_input_latest`
+FROM `${GCP_PROJECT_ID}.dbt_quants_dev.mart_ml_prediction_input_latest`
 GROUP BY symbol;
 ```
 
@@ -308,7 +308,7 @@ SELECT
   signal,
   predicted_at,
   hour_ts
-FROM `project-lambda-crypto.ml_outputs.model_predictions`
+FROM `${GCP_PROJECT_ID}.ml_outputs.model_predictions`
 ORDER BY predicted_at DESC
 LIMIT 20;
 ```
@@ -333,7 +333,7 @@ Check:
 
 ```sql
 SELECT *
-FROM `project-lambda-crypto.dbt_quants_dev.mart_ml_prediction_input_latest`;
+FROM `${GCP_PROJECT_ID}.dbt_quants_dev.mart_ml_prediction_input_latest`;
 ```
 
 Usually this means streaming/hourly data is not available yet.

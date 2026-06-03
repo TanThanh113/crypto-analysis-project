@@ -116,10 +116,32 @@ Current ML setup includes:
 Production images are stored in Google Artifact Registry:
 
 ```text
-asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
-asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-dbt:latest
-asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-ml:latest
+${GCP_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/crypto-docker/crypto-batch:latest
+${GCP_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/crypto-docker/crypto-dbt:latest
+${GCP_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/crypto-docker/crypto-ml:latest
 ```
+
+## Runtime Configuration
+
+Runtime project, bucket, dataset, and broker values should come from environment
+variables or the orchestrator secret/config layer, not from source code. Use
+`docs/runtime-config.example.env` as the non-secret template.
+
+Important variables:
+
+* `GCP_PROJECT_ID`: Google Cloud project used by BigQuery, BigLake, and GCS.
+* `GCP_LOCATION`: Google Cloud region/location, for example `asia-southeast1`.
+* `GCS_BUCKET_NAME`: canonical GCS bucket variable. `GCP_BUCKET_NAME` is only a
+  temporary legacy fallback.
+* `BQ_ANALYTICS_DATASET`, `BQ_STREAMING_DATASET`, `BQ_ML_OUTPUTS_DATASET`:
+  BigQuery datasets used by dbt, streaming, and ML.
+* `KAFKA_BOOTSTRAP`: Kafka/Redpanda bootstrap servers. `KAFKA_BROKER` is only a
+  temporary legacy fallback.
+
+Local Kafka Connect should authenticate with Application Default Credentials by
+setting `GOOGLE_APPLICATION_CREDENTIALS` to a local ADC credential file. Production
+workloads should use Workload Identity or service-account impersonation; Terraform
+does not create a long-lived Kafka Connect service-account key.
 
 Local build commands:
 

@@ -30,9 +30,6 @@ class BigQueryTableWriter:
     def __init__(self, client: bigquery.Client):
         self.client = client
 
-    def __init__(self, client: bigquery.Client):
-        self.client = client
-
     def full_table_id(self, spec: BigQueryWriteSpec) -> str:
         return f"{spec.project_id}.{spec.dataset_id}.{spec.table_id}"
 

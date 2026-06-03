@@ -17,6 +17,12 @@ def _read_secret_file(path: str) -> str:
     with open(path, "r", encoding="utf-8") as f:
         return f.read().strip()
 
+def required_env(name: str) -> str:
+    value = os.environ.get(name)
+    if value and value.strip():
+        return value.strip()
+    raise RuntimeError(f"Missing required environment variable: {name}")
+
 # Function that returns an object of type class AlertSettings.
 def load_settings() -> AlertSettings:
     # Get the webhook URL from secret.
@@ -29,7 +35,7 @@ def load_settings() -> AlertSettings:
     
     # Return the AlertSettings object.
     return AlertSettings(
-        project_id=os.environ.get("GCP_PROJECT_ID", "project-lambda-crypto"),
+        project_id=required_env("GCP_PROJECT_ID"),
         ml_outputs_dataset=os.environ.get("BQ_ML_OUTPUTS_DATASET", "ml_outputs"),
         location=os.environ.get("BQ_LOCATION", "asia-southeast1"),
         slack_webhook_url=webhook_url,

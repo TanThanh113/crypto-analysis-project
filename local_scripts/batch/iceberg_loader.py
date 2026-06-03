@@ -40,11 +40,23 @@ logging.basicConfig(
     stream=sys.stdout
 )
 
+
+def get_gcs_bucket_name():
+    bucket_name = os.environ.get("GCS_BUCKET_NAME")
+    if bucket_name:
+        return bucket_name
+
+    legacy_bucket_name = os.environ.get("GCP_BUCKET_NAME")
+    if legacy_bucket_name:
+        logging.warning("GCP_BUCKET_NAME is deprecated; use GCS_BUCKET_NAME instead.")
+    return legacy_bucket_name
+
+
 # =========================================================
 # CONFIG 
 # =========================================================
 # Config GCS (No default value)
-GCS_BUCKET_NAME = os.environ.get("GCP_BUCKET_NAME")
+GCS_BUCKET_NAME = get_gcs_bucket_name()
 GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID")
 GCP_LOCATION = os.environ.get("GCP_LOCATION", "asia-southeast1")
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "output_data")
@@ -71,7 +83,7 @@ FULL_TABLE_IDENTIFIER = f"{NAMESPACE}.{TABLE_NAME}"
 
 # Check if the GCS_BUCKET_NAME is set
 if not GCS_BUCKET_NAME:
-    logging.error("❌ GCP_BUCKET_NAME is missing from the environment variable.!")
+    logging.error("❌ GCS_BUCKET_NAME is missing from the environment variable.")
     sys.exit(1)
 
 # =========================================================

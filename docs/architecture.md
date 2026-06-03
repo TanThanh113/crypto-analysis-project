@@ -79,15 +79,15 @@ crypto-ml    -> ML training and prediction scripts
 Artifact Registry repository:
 
 ```text
-asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker
+${GCP_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/crypto-docker
 ```
 
 Image URIs:
 
 ```text
-asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
-asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-dbt:latest
-asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-ml:latest
+${GCP_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/crypto-docker/crypto-batch:latest
+${GCP_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/crypto-docker/crypto-dbt:latest
+${GCP_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/crypto-docker/crypto-ml:latest
 ```
 
 ---

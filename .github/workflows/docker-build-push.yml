@@ -22,10 +22,10 @@ on:
   workflow_dispatch:
 
 env:
-  PROJECT_ID: project-lambda-crypto
-  REGION: asia-southeast1
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  REGION: ${{ vars.GCP_LOCATION }}
   ARTIFACT_REPO: crypto-docker
-  IMAGE_BASE: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker
+  IMAGE_BASE: ${{ vars.GCP_LOCATION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/crypto-docker
 
 jobs:
   build-and-push:

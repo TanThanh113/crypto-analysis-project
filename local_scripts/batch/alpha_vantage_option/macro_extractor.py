@@ -26,7 +26,11 @@ logging.basicConfig(
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "output_data/macro")
 
 # API Key của bạn (nhớ gán biến môi trường khi chạy terminal)
-API_KEY = os.getenv("ALPHA_VANTAGE_MARCO_API_KEY", "demo") 
+API_KEY = (
+    os.getenv("ALPHA_VANTAGE_MACRO_API_KEY")
+    or os.getenv("ALPHA_VANTAGE_MARCO_API_KEY")
+    or "demo"
+)
 
 AV_SYMBOLS = {
     "SP500": "SPY",
