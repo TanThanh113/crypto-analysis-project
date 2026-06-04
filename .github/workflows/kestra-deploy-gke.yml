@@ -304,103 +304,18 @@ jobs:
         env:
           KESTRA_USERNAME: ${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}
           KESTRA_PASSWORD: ${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}
+          KESTRA_TENANT: main
+          KESTRA_FLOW_DIR: ${{ steps.meta.outputs.flow_dir }}
         run: |
           set -euo pipefail
 
           echo "Deploying Kestra flows through REST API..."
           echo "Mode: ${{ steps.meta.outputs.deploy_mode }}"
           echo "Namespace: ${{ steps.meta.outputs.flow_namespace }}"
-          echo "Directory: ${{ steps.meta.outputs.flow_dir }}"
+          echo "Directory: ${KESTRA_FLOW_DIR}"
 
           python -m pip install --user pyyaml
-
-          python - <<'PY'
-          from __future__ import annotations
-
-          import base64
-          import os
-          import pathlib
-          import sys
-          import urllib.error
-          import urllib.parse
-          import urllib.request
-
-          import yaml
-
-
-          KESTRA_SERVER = os.environ["KESTRA_SERVER"].rstrip("/")
-          TENANT = "main"
-          FLOW_DIR = pathlib.Path("${{ steps.meta.outputs.flow_dir }}")
-
-          username = os.environ["KESTRA_USERNAME"]
-          password = os.environ["KESTRA_PASSWORD"]
-
-          token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("utf-8")
-
-          headers = {
-              "Authorization": f"Basic {token}",
-              "Content-Type": "application/x-yaml",
-          }
-
-
-          def request(method: str, url: str, body: bytes | None = None) -> tuple[int, str]:
-              req = urllib.request.Request(
-                  url=url,
-                  data=body,
-                  headers=headers,
-                  method=method,
-              )
-
-              try:
-                  with urllib.request.urlopen(req, timeout=60) as response:
-                      payload = response.read().decode("utf-8", errors="replace")
-                      return response.status, payload
-              except urllib.error.HTTPError as exc:
-                  payload = exc.read().decode("utf-8", errors="replace")
-                  return exc.code, payload
-
-
-          def scan_invalid_boolean(obj) -> bool:
-              if isinstance(obj, dict):
-                  if obj.get("type") == "BOOLEAN":
-                      return True
-                  return any(scan_invalid_boolean(v) for v in obj.values())
-
-              if isinstance(obj, list):
-                  return any(scan_invalid_boolean(v) for v in obj)
-
-              return False
-
-
-          def deploy_flow(path: pathlib.Path) -> bool:
-              source = path.read_text(encoding="utf-8")
-              flow = yaml.safe_load(source)
-
-              if not isinstance(flow, dict):
-                  print(f"SKIP non-flow file: {path}")
-                  return True
-
-              flow_id = flow.get("id")
-              namespace = flow.get("namespace")
-
-              if not flow_id or not namespace:
-                  print(f"ERROR {path}: missing id or namespace")
-                  return False
-
-              if "labels" in flow and not isinstance(flow["labels"], dict):
-                  print(f"ERROR {path}: labels must be object/map, got {type(flow['labels']).__name__}")
-                  return False
-
-              if scan_invalid_boolean(flow):
-                  print(f"ERROR {path}: contains invalid input type BOOLEAN. Use BOOL.")
-                  return False
-
-              body = source.encode("utf-8")
-
-              ns_encoded = urllib.parse.quote(str(namespace), safe="")
-              id_encoded = urllib.parse print(f"ERROR {path}: labels must be object/map, got {type(flow['labels']).__name__}")
-                  return False
-
+          python .github/scripts/deploy_kestra_flows.py
               if scan_invalid_boolean(flow):
                   print(f"ERROR {path}: contains invalid input type BOOLEAN. Use BOOL.")
                   return False
