@@ -298,95 +298,158 @@ jobs:
             -u "${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}:${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}" \
             ${KESTRA_SERVER}/ > /dev/null
 
-      - name: Install kestractl
+      - name: Deploy Kestra flows through REST API
         if: steps.filter.outputs.kestra_flows == 'true'
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/kestra-io/kestractl/main/install-scripts/install.sh | INSTALL_DIR='./' bash
-          ./kestractl --help
-          ./kestractl flows deploy --help
-
-      - name: Deploy Kestra flows
-        if: steps.filter.outputs.kestra_flows == 'true'
+        shell: bash
         env:
-          KESTRACTL_USERNAME: ${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}
-          KESTRACTL_PASSWORD: ${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}
+          KESTRA_USERNAME: ${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}
+          KESTRA_PASSWORD: ${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}
         run: |
-          echo "Deploying Kestra flows..."
+          set -euo pipefail
+
+          echo "Deploying Kestra flows through REST API..."
           echo "Mode: ${{ steps.meta.outputs.deploy_mode }}"
           echo "Namespace: ${{ steps.meta.outputs.flow_namespace }}"
           echo "Directory: ${{ steps.meta.outputs.flow_dir }}"
 
-          ./kestractl flows deploy "${{ steps.meta.outputs.flow_dir }}" \
-            --host "${KESTRA_SERVER}" \
-            --tenant main \
-            --override
+          python -m pip install --user pyyaml
 
-      - name: Comment PR Kestra preview namespace
-        if: github.event_name == 'pull_request' && steps.filter.outputs.kestra_flows == 'true'
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const marker = '<!-- crypto-kestra-preview-flows -->';
-            const namespace = '${{ steps.meta.outputs.flow_namespace }}';
-            const imageTag = '${{ steps.meta.outputs.image_tag }}';
+          python - <<'PY'
+          from __future__ import annotations
 
-            const body = `${marker}
-            ## ✅ Kestra preview flows deployed
+          import base64
+          import os
+          import pathlib
+          import sys
+          import urllib.error
+          import urllib.parse
+          import urllib.request
 
-            Preview namespace:
+          import yaml
 
-            \`\`\`text
-            ${namespace}
-            \`\`\`
 
-            Preview image tag:
+          KESTRA_SERVER = os.environ["KESTRA_SERVER"].rstrip("/")
+          TENANT = "main"
+          FLOW_DIR = pathlib.Path("${{ steps.meta.outputs.flow_dir }}")
 
-            \`\`\`text
-            ${imageTag}
-            \`\`\`
+          username = os.environ["KESTRA_USERNAME"]
+          password = os.environ["KESTRA_PASSWORD"]
 
-            These preview flows have:
-            - top-level triggers removed
-            - namespace rewritten from \`${{ env.PROD_FLOW_NAMESPACE }}\` to \`${namespace}\`
-            - Artifact Registry \`:latest\` images rewritten to \`:${imageTag}\`
+          token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("utf-8")
 
-            Recommended manual tests in Kestra UI:
-            \`\`\`text
-            ${namespace}.the_pr_raw_hourly_test_gke
-            ${namespace}.the_pr_dbt_test_gke
-            ${namespace}.the_pr_ml_predict_test_gke
-            ${namespace}.the_pr_quality_monitoring_test_gke
-            \`\`\`
+          headers = {
+              "Authorization": f"Basic {token}",
+              "Content-Type": "application/x-yaml",
+          }
 
-            Do not manually run full production-like flows unless you confirm they are side-effect safe.
-            `;
 
-            const { owner, repo } = context.repo;
-            const issue_number = context.issue.number;
+          def request(method: str, url: str, body: bytes | None = None) -> tuple[int, str]:
+              req = urllib.request.Request(
+                  url=url,
+                  data=body,
+                  headers=headers,
+                  method=method,
+              )
 
-            const comments = await github.rest.issues.listComments({
-              owner,
-              repo,
-              issue_number,
-              per_page: 100,
-            });
+              try:
+                  with urllib.request.urlopen(req, timeout=60) as response:
+                      payload = response.read().decode("utf-8", errors="replace")
+                      return response.status, payload
+              except urllib.error.HTTPError as exc:
+                  payload = exc.read().decode("utf-8", errors="replace")
+                  return exc.code, payload
 
-            const previous = comments.data.find(comment =>
-              comment.body && comment.body.includes(marker)
-            );
 
-            if (previous) {
-              await github.rest.issues.updateComment({
-                owner,
-                repo,
-                comment_id: previous.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number,
-                body,
-              });
-            }
+          def scan_invalid_boolean(obj) -> bool:
+              if isinstance(obj, dict):
+                  if obj.get("type") == "BOOLEAN":
+                      return True
+                  return any(scan_invalid_boolean(v) for v in obj.values())
+
+              if isinstance(obj, list):
+                  return any(scan_invalid_boolean(v) for v in obj)
+
+              return False
+
+
+          def deploy_flow(path: pathlib.Path) -> bool:
+              source = path.read_text(encoding="utf-8")
+              flow = yaml.safe_load(source)
+
+              if not isinstance(flow, dict):
+                  print(f"SKIP non-flow file: {path}")
+                  return True
+
+              flow_id = flow.get("id")
+              namespace = flow.get("namespace")
+
+              if not flow_id or not namespace:
+                  print(f"ERROR {path}: missing id or namespace")
+                  return False
+
+              if "labels" in flow and not isinstance(flow["labels"], dict):
+                  print(f"ERROR {path}: labels must be object/map, got {type(flow['labels']).__name__}")
+                  return False
+
+              if scan_invalid_boolean(flow):
+                  print(f"ERROR {path}: contains invalid input type BOOLEAN. Use BOOL.")
+                  return False
+
+              body = source.encode("utf-8")
+
+              ns_encoded = urllib.parse.quote(str(namespace), safe="")
+              id_encoded = urllib.parse print(f"ERROR {path}: labels must be object/map, got {type(flow['labels']).__name__}")
+                  return False
+
+              if scan_invalid_boolean(flow):
+                  print(f"ERROR {path}: contains invalid input type BOOLEAN. Use BOOL.")
+                  return False
+
+              body = source.encode("utf-8")
+
+              ns_encoded = urllib.parse.quote(str(namespace), safe="")
+              id_encoded = urllib.quote(str(flow_id), safe="")
+
+              update_url = f"{KESTRA_SERVER}/api/v1/{TENANT}/flows/{ns_encoded}/{id_encoded}"
+              create_url = f"{KESTRA_SERVER}/api/v1/{TENANT}/flows"
+
+              # Try update first. If the flow does not exist or update endpoint is unavailable,
+              # fallback to create.
+              status, payload = request("PUT", update_url, body)
+
+              if 200 <= status < 300:
+                  print(f"UPDATED {namespace}.{flow_id}")
+                  return True
+
+              if status in {404, 405}:
+                  status, payload = request("POST", create_url, body)
+
+                  if 200 <= status < 300:
+                      print(f"CREATED {namespace}.{flow_id}")
+                      return True
+
+              print(f"FAILED {namespace}.{flow_id} from {path}")
+              print(f"HTTP status: {status}")
+              print(payload[:2000])
+              return False
+
+
+          files = sorted(FLOW_DIR.rglob("*.yml")) + sorted(FLOW_DIR.rglob("*.yaml"))
+
+          if not files:
+              print(f"No flow files found in {FLOW_DIR}")
+              sys.exit(1)
+
+          failed = 0
+
+          for path in files:
+              ok = deploy_flow(path)
+              if not ok:
+                  failed += 1
+
+          if failed:
+              print(f"Deployment failed: {failed} flow(s) failed.")
+              sys.exit(1)
+
+          print(f"Deployment completed successfully: {len(files)} flow file(s).")
+          PY
