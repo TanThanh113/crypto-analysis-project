@@ -206,6 +206,8 @@ jobs:
               labels["preview.image_tag"] = image_tag
               flow["labels"] = labels
 
+              flow.pop("labels", None)
+
               rewrite_object(flow)
 
               with dst.open("w", encoding="utf-8") as f:
@@ -249,7 +251,7 @@ jobs:
       - name: Install kestractl
         if: steps.filter.outputs.kestra_flows == 'true'
         run: |
-          curl -fsSL https://raw.githubusercontent.com/kestra-io/kestractl/main/install-scripts/install.sh | VERSION=v0.16.0 INSTALL_DIR='./' bash
+          curl -fsSL https://raw.githubusercontent.com/kestra-io/kestractl/main/install-scripts/install.sh | INSTALL_DIR='./' bash
           ./kestractl --help
           ./kestractl flows deploy --help
 
