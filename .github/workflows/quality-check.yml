@@ -140,4 +140,6 @@ jobs:
       - name: Python syntax check - ml
         working-directory: ml
         run: |
-          python -m compileall train_model.py predict_latest.py
+          python -m pip install -r requirements-dev.txt
+          python -m compileall train_model.py predict_latest.py mlflow_utils.py feature_contract.py
+          pytest tests
