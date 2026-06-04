@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - "local_scripts/**"
+      - "local_scripts/batch/**"
       - "dbt_transform/**"
       - "ml/**"
       - "docker/**"
@@ -14,7 +14,7 @@ on:
     branches:
       - main
     paths:
-      - "local_scripts/**"
+      - "local_scripts/batch/**"
       - "dbt_transform/**"
       - "ml/**"
       - "docker/**"
@@ -52,7 +52,7 @@ jobs:
         with:
           filters: |
             batch:
-              - 'local_scripts/**'
+              - 'local_scripts/batch/**'
               - 'docker/batch.Dockerfile'
               - '.github/workflows/docker-build-push.yml'
             dbt:

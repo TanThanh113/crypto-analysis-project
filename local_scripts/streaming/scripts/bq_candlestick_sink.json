@@ -1,0 +1,31 @@
+{
+  "connector.class": "com.wepay.kafka.connect.bigquery.BigQuerySinkConnector",
+  "tasks.max": "1",
+  "topics": "processed_candlestick_1min",
+  "project": "project-lambda-crypto",
+  "defaultDataset": "crypto_analytics_dataset",
+  "autoCreateTables": "false",
+  "autoUpdateSchemas": "false",
+  "allowSchemaUnionization": "false",
+  "sanitizeTopics": "true",
+  "queueSize": "1000",
+  "batchSize": "10",
+  "timePartitioningType": "NONE",
+  "bigQueryPartitionDecorator": "false",
+
+  "predicates": "isTombstone",
+  "predicates.isTombstone.type": "org.apache.kafka.connect.transforms.predicates.RecordIsTombstone",
+  
+  "transforms": "route,filterNulls",
+  
+  "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+  "transforms.route.regex": "processed_candlestick_1min",
+  "transforms.route.replacement": "candlestick_1min",
+
+  "transforms.filterNulls.type": "org.apache.kafka.connect.transforms.Filter",
+  "transforms.filterNulls.predicate": "isTombstone",
+  
+  "errors.tolerance": "all",
+  "errors.deadletterqueue.topic.name": "dlq_bigquery_errors",
+  "errors.deadletterqueue.context.headers.enable": "true"
+}

@@ -19,7 +19,12 @@ locals {
     "roles/secretmanager.secretAccessor",
     "roles/container.clusterAdmin",
     "roles/container.admin",
-    "roles/secretmanager.admin"
+    "roles/secretmanager.admin",
+
+    "roles/iam.serviceAccountUser",
+    "roles/iap.tunnelResourceAccessor",
+    "roles/compute.osLogin",
+    "roles/compute.instanceAdmin.v1"
   ]
 }
 

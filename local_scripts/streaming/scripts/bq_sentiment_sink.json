@@ -1,0 +1,22 @@
+{
+  "connector.class": "com.wepay.kafka.connect.bigquery.BigQuerySinkConnector",
+  "tasks.max": "1",
+  "topics": "crypto_macro",
+  "project": "project-lambda-crypto",
+  "defaultDataset": "crypto_analytics_dataset",
+  "autoCreateTables": "false",
+  "sanitizeTopics": "true",
+  "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+  "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "value.converter.schemas.enable": "false",
+  "transforms": "route",
+  "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+  "transforms.route.regex": "crypto_macro",
+  "transforms.route.replacement": "market_macro",
+  
+  "bigQueryPartitionDecorator": "false", 
+  
+  "errors.tolerance": "all",
+  "errors.deadletterqueue.topic.name": "dlq_bigquery_errors",
+  "errors.deadletterqueue.context.headers.enable": "true"
+}
