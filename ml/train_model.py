@@ -47,6 +47,9 @@ from sklearn.metrics import (
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
+from feature_contract import get_feature_contract_metadata
+from mlflow_utils import handle_mlflow_error, is_mlflow_enabled, log_training_run
+
 DEFAULT_VALID_CLASSES = ["UP", "DOWN", "FLAT"]
 
 # To structure the configuration settings, making the code clearer and easier to manage:
@@ -747,6 +750,158 @@ def write_metrics_to_bigquery(
         job_config=job_config,
     ).result()
 
+
+def summarize_training_data(
+    df: pd.DataFrame,
+    model_config: ModelConfig,
+) -> Dict[str, Any]:
+    summary: Dict[str, Any] = {
+        "total_row_count": int(len(df)),
+        "split_counts": {},
+        "split_date_ranges": {},
+    }
+
+    if model_config.split_column in df.columns:
+        split_counts = df[model_config.split_column].value_counts().to_dict()
+        summary["split_counts"] = {
+            str(split_name): int(row_count)
+            for split_name, row_count in split_counts.items()
+        }
+
+    if "hour_ts" not in df.columns or model_config.split_column not in df.columns:
+        return summary
+
+    for split_name, split_df in df.groupby(model_config.split_column):
+        timestamps = pd.to_datetime(split_df["hour_ts"], errors="coerce", utc=True).dropna()
+        if timestamps.empty:
+            continue
+
+        summary["split_date_ranges"][str(split_name)] = {
+            "start": timestamps.min().isoformat(),
+            "end": timestamps.max().isoformat(),
+        }
+
+    return summary
+
+
+def flatten_model_metrics(results: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    flattened: Dict[str, Any] = {}
+
+    for model_key, result in results.items():
+        for split_name, metrics in result.get("metrics", {}).items():
+            for metric_name, metric_value in metrics.items():
+                flattened[f"{model_key}.{split_name}.{metric_name}"] = metric_value
+
+    return flattened
+
+
+def build_training_summary_artifact(
+    artifact_dir: Path,
+    run_id: str,
+    summary: Dict[str, Any],
+    feature_contract_metadata: Dict[str, Any],
+    best_model_key: str,
+    best_artifact_uri: str,
+) -> Path:
+    summary_path = artifact_dir / f"training_summary_{run_id}.json"
+    payload = {
+        "run_id": run_id,
+        "best_model_key": best_model_key,
+        "best_artifact_uri": best_artifact_uri,
+        "training_summary": summary,
+        "feature_contract": feature_contract_metadata,
+        "created_at": utc_now().isoformat(),
+    }
+
+    with summary_path.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, default=str)
+
+    return summary_path
+
+
+def log_optional_mlflow_training_run(
+    *,
+    config_path: Path,
+    artifact_dir: Path,
+    args: argparse.Namespace,
+    bq_config: BigQueryConfig,
+    model_config: ModelConfig,
+    df: pd.DataFrame,
+    results: Dict[str, Dict[str, Any]],
+    run_id: str,
+    best_model_key: str,
+    best_artifact_uri: str,
+    manifest_path: Path,
+) -> None:
+    if not is_mlflow_enabled():
+        return
+
+    try:
+        feature_contract_metadata = get_feature_contract_metadata(config_path)
+        training_summary = summarize_training_data(df, model_config)
+
+        params: Dict[str, Any] = {
+            "model_name": model_config.model_name,
+            "model_version": model_config.model_version,
+            "model_choice": args.model_choice,
+            "target_name": model_config.target_name,
+            "primary_metric": model_config.primary_metric,
+            "training_table": bq_config.training_table_fqn,
+            "feature_table": bq_config.training_table_fqn,
+            "metrics_table": bq_config.metrics_table_fqn,
+            "best_model_key": best_model_key,
+            "total_row_count": training_summary["total_row_count"],
+        }
+
+        for split_name, row_count in training_summary.get("split_counts", {}).items():
+            params[f"split.{split_name}.row_count"] = row_count
+
+        for split_name, date_range in training_summary.get("split_date_ranges", {}).items():
+            params[f"split.{split_name}.start"] = date_range.get("start")
+            params[f"split.{split_name}.end"] = date_range.get("end")
+
+        params.update(feature_contract_metadata)
+
+        tags = {
+            "mlflow_phase": "phase_1_experiment_logging",
+            "model_name": model_config.model_name,
+            "model_version": model_config.model_version,
+            "target_name": model_config.target_name,
+            "training_table": bq_config.training_table_fqn,
+            "feature_contract_hash": feature_contract_metadata.get("feature_contract_hash"),
+            "git_sha": args.git_sha,
+            "best_model_key": best_model_key,
+        }
+
+        summary_artifact = build_training_summary_artifact(
+            artifact_dir=artifact_dir,
+            run_id=run_id,
+            summary=training_summary,
+            feature_contract_metadata=feature_contract_metadata,
+            best_model_key=best_model_key,
+            best_artifact_uri=best_artifact_uri,
+        )
+
+        artifact_paths: List[Path] = [config_path, summary_artifact]
+        if manifest_path.exists():
+            artifact_paths.append(manifest_path)
+
+        for result in results.values():
+            artifact_path = result.get("artifact_path")
+            if artifact_path:
+                artifact_paths.append(Path(artifact_path))
+
+        log_training_run(
+            run_name=f"{model_config.model_name}_{model_config.model_version}_{run_id}",
+            params=params,
+            metrics=flatten_model_metrics(results),
+            tags=tags,
+            artifact_paths=artifact_paths,
+        )
+
+    except Exception as exc:
+        handle_mlflow_error("Optional MLflow training logging failed", exc)
+
 # Parse the command-line arguments.
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train crypto 4H direction model.")
@@ -1024,6 +1179,20 @@ def main() -> int:
             run_id=run_id,
             git_sha=args.git_sha,
         )
+
+    log_optional_mlflow_training_run(
+        config_path=config_path,
+        artifact_dir=artifact_dir,
+        args=args,
+        bq_config=bq_config,
+        model_config=model_config,
+        df=df,
+        results=results,
+        run_id=run_id,
+        best_model_key=best_model_key,
+        best_artifact_uri=best_artifact_uri,
+        manifest_path=manifest_path,
+    )
 
     print("[train] Done.")
     return 0
