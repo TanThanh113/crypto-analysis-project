@@ -9,6 +9,16 @@ description: |
 labels:
   system.readOnly: "true"
 
+triggers:
+  - id: after_dbt_daily_market_transform
+    type: io.kestra.plugin.core.trigger.Flow
+    preconditions:
+      id: dbt_daily_market_success
+      flows:
+        - namespace: crypto.data_engineering
+          flowId: the_dbt_daily_market_transform
+          states: [SUCCESS]
+          
 tasks:
   - id: train_model
     type: io.kestra.plugin.kubernetes.core.PodCreate
@@ -33,7 +43,7 @@ tasks:
               python train_model.py \
                 --config feature_list.yml \
                 --artifact-dir artifacts \
-                --model-choice logistic \
+                --model-choice auto \
                 --artifact-storage both
 
               echo "[train] ML training completed."

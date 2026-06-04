@@ -10,15 +10,15 @@ description: |
   Uses Workload Identity and downloads the latest model artifact from GCS.
 
 # Enable only after streaming producer is running reliably.
-# triggers:
-#   - id: after_streaming_hourly_transform_gke
-#     type: io.kestra.plugin.core.trigger.Flow
-#     preconditions:
-#       id: streaming_hourly_gke_success
-#       flows:
-#         - namespace: crypto.data_engineering
-#           flowId: the_streaming_hourly_transform_gke
-#           states: [SUCCESS]
+triggers:
+  - id: after_streaming_hourly_transform_gke
+    type: io.kestra.plugin.core.trigger.Flow
+    preconditions:
+      id: streaming_hourly_gke_success
+      flows:
+        - namespace: crypto.data_engineering
+          flowId: the_streaming_hourly_transform_gke
+          states: [SUCCESS]
 
 tasks:
   - id: run_predict_latest_safe

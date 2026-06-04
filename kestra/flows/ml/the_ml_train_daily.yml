@@ -38,7 +38,7 @@ tasks:
         python train_model.py \
           --config feature_list.yml \
           --artifact-dir artifacts \
-          --model-choice logistic \
+          --model-choice auto \
           --artifact-storage both
 
   - id: build_model_metrics_mart
