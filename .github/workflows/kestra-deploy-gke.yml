@@ -172,7 +172,7 @@ jobs:
                           obj[key] = preview_namespace
 
                       if key in {"image", "containerImage"} and isinstance(value, str):
-                          if value.startswith(image_base) and value.endswith(":latest"):
+                          if ":latest" in value:
                               obj[key] = value[:-len(":latest")] + f":{image_tag}"
 
                       rewrite_object(value)
@@ -199,14 +199,25 @@ jobs:
               flow.pop("triggers", None)
 
               labels = flow.get("labels")
-              if not isinstance(labels, dict):
+
+              if isinstance(labels, list):
+                  normalized_labels = {}
+                  for item in labels:
+                      if isinstance(item, dict):
+                          if "key" in item and "value" in item:
+                              normalized_labels[str(item["key"])] = str(item["value"])
+                          else:
+                              for k, v in item.items():
+                                  normalized_labels[str(k)] = str(v)
+                  labels = normalized_labels
+
+              elif not isinstance(labels, dict):
                   labels = {}
+
               labels["preview"] = "true"
               labels["preview.pr"] = "${{ github.event.pull_request.number }}"
               labels["preview.image_tag"] = image_tag
               flow["labels"] = labels
-
-              flow.pop("labels", None)
 
               rewrite_object(flow)
 

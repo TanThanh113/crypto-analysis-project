@@ -11,42 +11,42 @@ description: |
 
 inputs:
   - id: run_hourly_branch
-    type: BOOLEAN
+    type: BOOL
     defaults: true
     description: Run hourly raw snapshot. dbt hourly transform is triggered automatically.
 
   - id: run_intraday_branch
-    type: BOOLEAN
+    type: BOOL
     defaults: true
     description: Run intraday raw snapshot. dbt intraday transform is triggered automatically.
 
   - id: run_daily_market_branch
-    type: BOOLEAN
+    type: BOOL
     defaults: false
     description: Run daily Binance market snapshot. Heavy branch, disabled by default.
 
   - id: run_macro_branch
-    type: BOOLEAN
+    type: BOOL
     defaults: false
     description: Run daily macro snapshot. dbt macro transform is triggered automatically.
 
   - id: run_etf_branch
-    type: BOOLEAN
+    type: BOOL
     defaults: false
     description: Run daily ETF snapshot. dbt ETF transform is triggered automatically.
 
   - id: run_streaming_transform
-    type: BOOLEAN
+    type: BOOL
     defaults: false
     description: Run streaming hourly dbt transform. Enable only when streaming data is available.
 
   - id: run_ml_predict
-    type: BOOLEAN
+    type: BOOL
     defaults: false
     description: Run hourly ML prediction safe flow. Enable after streaming prediction input is available.
 
   - id: run_ml_train
-    type: BOOLEAN
+    type: BOOL
     defaults: false
     description: Run daily ML training manually. Normally triggered after daily market transform.
 
