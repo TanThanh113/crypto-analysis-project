@@ -18,7 +18,7 @@ resource "google_dataproc_cluster" "crypto_cluster" {
       metadata = {
         "GCS_BUCKET_NAME" = google_storage_bucket.crypto_bucket.name
       }
-      
+
       service_account_scopes = ["https://www.googleapis.com/auth/cloud-platform"]
     }
 
