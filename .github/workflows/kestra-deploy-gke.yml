@@ -158,7 +158,6 @@ jobs:
           target_root = pathlib.Path("${{ steps.meta.outputs.flow_dir }}")
           preview_namespace = "${{ steps.meta.outputs.flow_namespace }}"
           prod_namespace = os.environ["PROD_FLOW_NAMESPACE"]
-          image_base = os.environ["IMAGE_BASE"]
           image_tag = "${{ steps.meta.outputs.image_tag }}"
 
           if target_root.exists():
@@ -168,12 +167,17 @@ jobs:
           def rewrite_object(obj):
               if isinstance(obj, dict):
                   for key, value in list(obj.items()):
+                      # Rewrite production namespace to PR preview namespace.
                       if key == "namespace" and value == prod_namespace:
                           obj[key] = preview_namespace
 
+                      # Kestra input type must be BOOL, not BOOLEAN.
+                      if key == "type" and value == "BOOLEAN":
+                          obj[key] = "BOOL"
+
+                      # Rewrite Docker image tag from latest to pr-<number>.
                       if key in {"image", "containerImage"} and isinstance(value, str):
-                          if value.startswith(image_base) and value.endswith(":latest"):
-                              obj[key] = value[:-len(":latest")] + f":{image_tag}"
+                          obj[key] = value.replace(":latest", f":{image_tag}")
 
                       rewrite_object(value)
 
@@ -194,17 +198,17 @@ jobs:
               if not isinstance(flow, dict):
                   continue
 
-              # Force preview namespace and disable automatic schedules/flow triggers.
+              # Force preview namespace.
               flow["namespace"] = preview_namespace
+
+              # Preview flows must never auto-run.
               flow.pop("triggers", None)
 
-              labels = flow.get("labels")
-              if not isinstance(labels, dict):
-                  labels = {}
-              labels["preview"] = "true"
-              labels["preview.pr"] = "${{ github.event.pull_request.number }}"
-              labels["preview.image_tag"] = image_tag
-              flow["labels"] = labels
+              # IMPORTANT:
+              # Remove labels from PR preview copies.
+              # Some Kestra/kestractl versions fail when labels are serialized as arrays.
+              # Labels are not required for preview deploy validation.
+              flow.pop("labels", None)
 
               rewrite_object(flow)
 
@@ -218,7 +222,55 @@ jobs:
           PY
 
           echo "Preview flow files:"
-          find "${{ steps.meta.outputs.flow_dir }}" -type f -name '*.yml' -o -name '*.yaml'
+          find "${{ steps.meta.outputs.flow_dir }}" \( -name '*.yml' -o -name '*.yaml' \) -type f -print
+
+          echo "Checking generated preview files for invalid labels or BOOLEAN..."
+          python - <<'PY'
+          import pathlib
+          import yaml
+          import sys
+
+          root = pathlib.Path("${{ steps.meta.outputs.flow_dir }}")
+          failed = False
+
+          for path in sorted(root.rglob("*.yml")) + sorted(root.rglob("*.yaml")):
+              with path.open("r", encoding="utf-8") as f:
+                  flow = yaml.safe_load(f)
+
+              if not isinstance(flow, dict):
+                  continue
+
+              if "labels" in flow:
+                  print(f"ERROR: preview file still has labels: {path}")
+                  failed = True
+
+              def scan(obj, current_path):
+                  global_failed = False
+
+                  if isinstance(obj, dict):
+                      if obj.get("type") == "BOOLEAN":
+                          print(f"ERROR: BOOLEAN type still exists in {path}: {current_path}")
+                          global_failed = True
+
+                      for key, value in obj.items():
+                          if scan(value, f"{current_path}.{key}"):
+                              global_failed = True
+
+                  elif isinstance(obj, list):
+                      for index, item in enumerate(obj):
+                          if scan(item, f"{current_path}[{index}]"):
+                              global_failed = True
+
+                  return global_failed
+
+              if scan(flow, "$"):
+                  failed = True
+
+          if failed:
+              sys.exit(1)
+
+          print("Generated preview files are clean: no labels, no BOOLEAN.")
+          PY
 
       - name: Port-forward Kestra webserver
         if: steps.filter.outputs.kestra_flows == 'true'
@@ -246,95 +298,21 @@ jobs:
             -u "${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}:${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}" \
             ${KESTRA_SERVER}/ > /dev/null
 
-      - name: Install kestractl
+      - name: Deploy Kestra flows through REST API
         if: steps.filter.outputs.kestra_flows == 'true'
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/kestra-io/kestractl/main/install-scripts/install.sh | INSTALL_DIR='./' bash
-          ./kestractl --help
-          ./kestractl flows deploy --help
-
-      - name: Deploy Kestra flows
-        if: steps.filter.outputs.kestra_flows == 'true'
+        shell: bash
         env:
-          KESTRACTL_USERNAME: ${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}
-          KESTRACTL_PASSWORD: ${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}
+          KESTRA_USERNAME: ${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}
+          KESTRA_PASSWORD: ${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}
+          KESTRA_TENANT: main
+          KESTRA_FLOW_DIR: ${{ steps.meta.outputs.flow_dir }}
         run: |
-          echo "Deploying Kestra flows..."
+          set -euo pipefail
+
+          echo "Deploying Kestra flows through REST API..."
           echo "Mode: ${{ steps.meta.outputs.deploy_mode }}"
           echo "Namespace: ${{ steps.meta.outputs.flow_namespace }}"
-          echo "Directory: ${{ steps.meta.outputs.flow_dir }}"
+          echo "Directory: ${KESTRA_FLOW_DIR}"
 
-          ./kestractl flows deploy "${{ steps.meta.outputs.flow_dir }}" \
-            --host "${KESTRA_SERVER}" \
-            --tenant main \
-            --override
-
-      - name: Comment PR Kestra preview namespace
-        if: github.event_name == 'pull_request' && steps.filter.outputs.kestra_flows == 'true'
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const marker = '<!-- crypto-kestra-preview-flows -->';
-            const namespace = '${{ steps.meta.outputs.flow_namespace }}';
-            const imageTag = '${{ steps.meta.outputs.image_tag }}';
-
-            const body = `${marker}
-            ## ✅ Kestra preview flows deployed
-
-            Preview namespace:
-
-            \`\`\`text
-            ${namespace}
-            \`\`\`
-
-            Preview image tag:
-
-            \`\`\`text
-            ${imageTag}
-            \`\`\`
-
-            These preview flows have:
-            - top-level triggers removed
-            - namespace rewritten from \`${{ env.PROD_FLOW_NAMESPACE }}\` to \`${namespace}\`
-            - Artifact Registry \`:latest\` images rewritten to \`:${imageTag}\`
-
-            Recommended manual tests in Kestra UI:
-            \`\`\`text
-            ${namespace}.the_pr_raw_hourly_test_gke
-            ${namespace}.the_pr_dbt_test_gke
-            ${namespace}.the_pr_ml_predict_test_gke
-            ${namespace}.the_pr_quality_monitoring_test_gke
-            \`\`\`
-
-            Do not manually run full production-like flows unless you confirm they are side-effect safe.
-            `;
-
-            const { owner, repo } = context.repo;
-            const issue_number = context.issue.number;
-
-            const comments = await github.rest.issues.listComments({
-              owner,
-              repo,
-              issue_number,
-              per_page: 100,
-            });
-
-            const previous = comments.data.find(comment =>
-              comment.body && comment.body.includes(marker)
-            );
-
-            if (previous) {
-              await github.rest.issues.updateComment({
-                owner,
-                repo,
-                comment_id: previous.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number,
-                body,
-              });
-            }
+          python -m pip install --user pyyaml
+          python .github/scripts/deploy_kestra_flows.py

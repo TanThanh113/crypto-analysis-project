@@ -293,6 +293,7 @@ def query_prediction_input(
     columns = [
         "hour_ts",
         "feature_available_at",
+        "feature_completeness_score",
         "symbol",
         "pair_symbol",
     ] + model_config.all_features
@@ -315,9 +316,10 @@ def query_prediction_input(
 def validate_prediction_input(
     df: pd.DataFrame,
     model_config: ModelConfig,
+    min_feature_completeness_score: float,
 ) -> None:
     required_columns = set(
-        ["hour_ts", "symbol", "feature_available_at"] + model_config.all_features
+        ["hour_ts", "symbol", "feature_available_at", "feature_completeness_score"] + model_config.all_features
     )
 
     missing_columns = sorted(required_columns - set(df.columns))
@@ -331,6 +333,19 @@ def validate_prediction_input(
         raise ValueError(
             "Prediction input returned 0 rows. "
             "Check mart_ml_prediction_input_latest and streaming/core data."
+        )
+    
+    completeness = pd.to_numeric(df["feature_completeness_score"], errors="coerce").fillna(0)
+
+    low_completeness = df[completeness < min_feature_completeness_score]
+
+    if not low_completeness.empty:
+        raise ValueError(
+            "Prediction input has rows below "
+            f"min_feature_completeness_score={min_feature_completeness_score}: "
+            + low_completeness[
+                ["symbol", "hour_ts", "feature_completeness_score"]
+            ].to_string(index=False)
         )
 
 
@@ -629,6 +644,11 @@ def main() -> int:
     config = load_yaml(config_path)
 
     latest_manifest_name = resolve_latest_manifest_name(config)
+    prediction_config = config.get("prediction", {})
+
+    min_feature_completeness_score = float(
+        prediction_config.get("min_feature_completeness_score", 0.50)
+    )
 
     artifact_storage = resolve_artifact_storage(
         config=config,
@@ -684,7 +704,7 @@ def main() -> int:
         model_config=model_config,
     )
 
-    validate_prediction_input(df, model_config)
+    validate_prediction_input(df, model_config, min_feature_completeness_score)
     df = clean_prediction_features(df, model_config)
 
     predictions = make_predictions(
