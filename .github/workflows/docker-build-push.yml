@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - "local_scripts/**"
+      - "local_scripts/batch/**"
       - "dbt_transform/**"
       - "ml/**"
       - "docker/**"
@@ -14,7 +14,7 @@ on:
     branches:
       - main
     paths:
-      - "local_scripts/**"
+      - "local_scripts/batch/**"
       - "dbt_transform/**"
       - "ml/**"
       - "docker/**"
