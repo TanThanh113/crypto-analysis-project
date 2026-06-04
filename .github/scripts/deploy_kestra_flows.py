@@ -68,13 +68,8 @@ def deploy_flow(
         return False
 
     if "labels" in flow and not isinstance(flow["labels"], dict):
-        print(
-                   print(f"ERROR {path}: missing id or namespace")
-        return False
-
-    if "labels" in flow and not isinstance(flow["labels f"ERROR {path}: labels must be object/map, "
-            f"got {type(flow['labels']).__name__}"
-        )
+        label_type = type(flow["labels"]).__name__
+        print(f"ERROR {path}: labels must be object/map, got {label_type}")
         return False
 
     if scan_invalid_boolean(flow):
