@@ -52,7 +52,7 @@ jobs:
         with:
           filters: |
             batch:
-              - 'local_scripts/**'
+              - 'local_scripts/batch/**'
               - 'docker/batch.Dockerfile'
               - '.github/workflows/docker-build-push.yml'
             dbt:

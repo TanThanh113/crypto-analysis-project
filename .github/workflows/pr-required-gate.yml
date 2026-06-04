@@ -32,7 +32,7 @@ jobs:
         with:
           filters: |
             docker_required:
-              - 'local_scripts/**'
+              - 'local_scripts/batch/**'
               - 'dbt_transform/**'
               - 'ml/**'
               - 'docker/**'
