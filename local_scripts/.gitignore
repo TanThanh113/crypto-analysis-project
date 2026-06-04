@@ -13,3 +13,6 @@ wheels/
 # GCP Secrets
 gcp-key.json
 *.json
+
+# Unblock Kafka Connect configuration
+!streaming/scripts/*.json

@@ -9,7 +9,7 @@ ZONE="asia-southeast1-c"
 
 source .env
 
-echo "🚀 Deploy the ULTRA STABLE version. - MÁY 32GB 🚀"
+echo "🚀 Deploy the ULTRA STABLE version. - RAM 32GB 🚀"
 echo "🔗 Kafka bootstrap from .env: ${KAFKA_ADVERTISED_ADDR}"
 
 cat << EOF > ./temp_remote_script.sh

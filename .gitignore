@@ -117,3 +117,8 @@ local_scripts/batch/backfill/**/*.success
 local_scripts/batch/backfill/**/*.parquet
 local_scripts/batch/backfill/**/*.csv
 local_scripts/batch/backfill/**/*.jsonl
+
+# Except for Kafka Connect files
+!local_scripts/streaming/scripts/bq_alerts_sink.json
+!local_scripts/streaming/scripts/bq_candlestick_sink.json
+!local_scripts/streaming/scripts/bq_sentiment_sink.json
