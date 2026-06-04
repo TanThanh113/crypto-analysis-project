@@ -1,0 +1,115 @@
+default:
+  # ----------------------------------------
+  # 1. WHALE ABSORPTION (BOTTOM CATCHER)
+  # ----------------------------------------
+  window_seconds: 5              # Time window for liquidation & trade spikes (seconds)
+  liq_multiplier: 5.0            # Liquidation burst must be 5x above 10m average
+  bid_wall_multiplier: 3.0       # Bid wall must be 3x thicker than 10m average
+  whale_multiplier: 4.0          # Buying volume must be 4x above 10m average
+
+  # ----------------------------------------
+  # 2. PUMP DETECTOR (BASE SETTINGS)
+  # ----------------------------------------
+  pump_window_minutes: 1         # Time window to measure the pump (minutes)
+  pump_price_pct: 1.5            # Price must spike by > 1.5% within the window
+
+  # ----------------------------------------
+  # 2A. BULL TRAP (FAKE PUMP WARNING)
+  # ----------------------------------------
+  ask_wall_multiplier: 3.0       # Ask wall must be 3x thicker than the 10m average
+  max_pump_vol_multiplier: 1.5   # Pump volume must NOT exceed 1.5x of normal (indicates a fake pump)
+  ask_bid_imbalance: 4.0         # Ask wall must be at least 4x larger than Bid wall (ready to dump)
+
+  # ----------------------------------------
+  # 2B. TRUE BREAKOUT (REAL PUMP ALERT)
+  # ----------------------------------------
+  min_vol_multiplier: 3.0        # Pump volume must be > 3x of normal (real money flowing in)
+  bid_ask_imbalance: 2.0         # Bid wall must be at least 2x larger than Ask wall (strong support)
+
+  # ----------------------------------------
+  # 3. SPOOFING DETECTOR (FAKE WALL MANIPULATION)
+  # ----------------------------------------
+  spoof_window_seconds: 10       # Timeframe to detect the appearance and cancellation of the fake wall
+  spoof_multiplier: 4.0          # The wall must spike to at least 4x its normal size
+  execution_threshold: 0.1       # The traded volume must be LESS THAN 10% of the fake wall size (proving it was canceled, not filled)
+
+# ----------------------------------------
+  # 4. LIQUIDATION CASCADE (FLASH CRASH PREDICTOR)
+  # ----------------------------------------
+  cascade_window_seconds: 5        # Time window to accumulate liquidations
+  cascade_liq_multiplier: 5.0      # Liquidations must be 5x the 10-minute average
+  min_base_liq_usd: 5000           # Minimum baseline to prevent micro-liquidations from triggering alerts
+  liquidity_ratio: 1.5             # Liquidated Volume must be 1.5x larger than the Bid Wall
+
+# ----------------------------------------
+  # 5. LEAD-LAG ARBITRAGE (CROSS-ASSET)
+  # ----------------------------------------
+  lead_lag_window_seconds: 3     # Micro-window for latency detection
+  leader_move_pct: 0.5           # Leader (BTC) must move by at least 0.5%
+  lagger_delay_pct: 0.1          # Lagger (ETH) must have moved less than 0.1%
+
+# ----------------------------------------
+  # 6. ORDER FLOW IMBALANCE (HIDDEN ORDERS)
+  # ----------------------------------------
+  ofi_window_seconds: 10         # Measure wall changes over 10 seconds
+  ofi_delta_usd_threshold: 500000 # Minimum liquidity shift to trigger an alert ($500k)
+
+# ----------------------------------------
+  # 7. MICRO MEAN-REVERSION (CHOPPY SCALPING)
+  # ----------------------------------------
+  scalp_window_seconds: 15       # Window to calculate VWAP and Price Deviation
+  max_chop_vol: 0.5              # Traded volume must be < 50% of the 30m average (Boring market)
+  vwap_deviation_pct: 0.15       # Price must deviate 0.15% from VWAP
+  reversion_wall_multiplier: 2.0 # Must hit a wall 2x thicker to guarantee a bounce
+
+# Precision-tuned parameters for specific high-cap coins
+symbols:
+  BTCUSDT:
+    window_seconds: 5
+    liq_multiplier: 6.0
+    bid_wall_multiplier: 4.0
+    whale_multiplier: 5.0
+    pump_window_minutes: 1
+    pump_price_pct: 0.8          
+    ask_wall_multiplier: 4.0
+    max_pump_vol_multiplier: 1.2
+    ask_bid_imbalance: 5.0
+    min_vol_multiplier: 3.0
+    bid_ask_imbalance: 2.0
+    cascade_window_seconds: 5
+    cascade_liq_multiplier: 5.0    
+    min_base_liq_usd: 20000        
+    liquidity_ratio: 2.0
+    ofi_delta_usd_threshold: 1500000
+
+  ETHUSDT:
+    window_seconds: 5
+    liq_multiplier: 4.0
+    bid_wall_multiplier: 3.0
+    whale_multiplier: 4.0
+    pump_window_minutes: 1
+    pump_price_pct: 1.0
+    ask_wall_multiplier: 3.5
+    max_pump_vol_multiplier: 1.5
+    ask_bid_imbalance: 4.0
+    min_vol_multiplier: 2.5
+    bid_ask_imbalance: 1.5
+    spoof_window_seconds: 10
+    spoof_multiplier: 5.0        
+    execution_threshold: 0.05    
+    cascade_window_seconds: 5
+    cascade_liq_multiplier: 4.0
+    min_base_liq_usd: 10000
+    liquidity_ratio: 1.5
+    ofi_delta_usd_threshold: 500000
+
+  onchain_filters:
+  USDT: 
+    decimals: 6
+    min_base_transfer: 100000
+  WBTC: 
+    decimals: 8
+    min_base_transfer: 5
+  WETH: 
+    decimals: 18
+    min_base_transfer: 100

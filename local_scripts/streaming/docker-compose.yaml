@@ -1,0 +1,111 @@
+services:
+  redpanda:
+    image: redpandadata/redpanda:v25.3.9
+    container_name: local-redpanda
+    command:
+      - redpanda
+      - start
+      - --smp
+      - '1'
+      - --reserve-memory
+      - 0M
+      - --overprovisioned
+      - --node-id
+      - '1'
+      - --kafka-addr
+      - DOCKER://0.0.0.0:29092,HOST://0.0.0.0:19092,OUTSIDE://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - DOCKER://redpanda:29092,HOST://localhost:19092,OUTSIDE://${KAFKA_ADVERTISED_ADDR:-localhost:9092}
+      - --pandaproxy-addr
+      - PLAINTEXT://0.0.0.0:28082,OUTSIDE://0.0.0.0:8082
+      - --advertise-pandaproxy-addr
+      - PLAINTEXT://redpanda:28082,OUTSIDE://localhost:8082
+      - --rpc-addr
+      - 0.0.0.0:33145
+      - --advertise-rpc-addr
+      - redpanda:33145
+    ports:
+      - 8082:8082
+      - 9092:9092
+      - 19092:19092
+      - 28082:28082
+      - 29092:29092
+    
+    healthcheck:
+      
+      test: ["CMD-SHELL", "rpk cluster health | grep 'Healthy' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  console:
+    image: redpandadata/console:latest
+    container_name: redpanda-console
+    depends_on:
+      - redpanda
+      - kafka-connect
+    ports:
+      - "8080:8080"
+    environment:
+      # Connnect to Redpanda brokers
+      KAFKA_BROKERS: "redpanda:29092"
+      # Coonect to Kafka Connect manager BigQuery connector UI
+      CONNECT_ENABLED: "true"
+      CONNECT_CLUSTERS_0_NAME: "local-connect"
+      CONNECT_CLUSTERS_0_URL: "http://kafka-connect:8083"
+
+  redpanda-init:
+    image: redpandadata/redpanda:v25.3.9
+    container_name: local-redpanda-init
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: [ "/bin/bash", "-c" ]
+    command: 
+      - |
+        echo "🚀 Create topics for Flink..."
+        rpk topic create crypto_trades --brokers redpanda:29092
+        rpk topic create crypto_orderbook --brokers redpanda:29092
+        rpk topic create crypto_liquidations --brokers redpanda:29092
+        rpk topic create crypto_sentiment --brokers redpanda:29092
+        rpk topic create crypto_onchain_alerts --brokers redpanda:29092
+        rpk topic create crypto_macro --brokers redpanda:29092
+        
+        rpk topic create processed_alerts --brokers redpanda:29092
+        rpk topic create processed_candlestick_1min --brokers redpanda:29092
+
+        rpk topic create dlq_bigquery_errors --brokers redpanda:29092
+        rpk topic create dlq_flink_logic_errors --brokers redpanda:29092
+        echo "✅ Created all topics!"
+
+  kafka-connect:
+    image: confluentinc/cp-kafka-connect:7.4.0
+    container_name: kafka-connect-bq
+    depends_on:
+      - redpanda
+    ports:
+      - "8083:8083"
+    volumes:
+      - ./secrets/kafka_connect_key.json:/app/secrets/kafka_connect_key.json:ro
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: "redpanda:29092"
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: "kafka-connect-group"
+      CONNECT_CONFIG_STORAGE_TOPIC: "connect-configs"
+      CONNECT_OFFSET_STORAGE_TOPIC: "connect-offsets"
+      CONNECT_STATUS_STORAGE_TOPIC: "connect-status"
+      CONNECT_KEY_CONVERTER: "org.apache.kafka.connect.storage.StringConverter"
+      CONNECT_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_REST_ADVERTISED_HOST_NAME: "kafka-connect"
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      GOOGLE_APPLICATION_CREDENTIALS: "/app/secrets/kafka_connect_key.json"
+    command:
+      - bash
+      - -c
+      - |
+        echo "Installing BigQuery Connector..."
+        confluent-hub install --no-prompt wepay/kafka-connect-bigquery:latest
+        /etc/confluent/docker/run

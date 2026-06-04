@@ -31,3 +31,12 @@ resource "google_project_iam_member" "flink_sa_roles" {
   role     = each.value
   member   = "serviceAccount:${google_service_account.flink_sa.email}"
 }
+
+resource "google_service_account_key" "kafka_connect_key" {
+  service_account_id = google_service_account.flink_sa.name
+}
+
+resource "local_file" "kafka_connect_key_key_json" {
+  content  = base64decode(google_service_account_key.kafka_connect_key.private_key)
+  filename = "${path.module}/../local_scripts/streaming/secrets/kafka_connect_key.json"
+}

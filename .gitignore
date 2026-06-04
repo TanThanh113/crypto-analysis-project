@@ -27,13 +27,27 @@ ml/artifacts/
 .env.*
 *.key
 *.pem
-local_scripts/streaming/secrets/
 local_scripts/secret_kestra.sh
 **/*service-account*.json
 **/*credential*.json
 **/*credentials*.json
 **/*secret*.json
 **/kafka_connect_key.json
+
+# Local streaming 
+local_scripts/streaming/.env
+local_scripts/streaming/producer/.env
+local_scripts/streaming/secrets/
+local_scripts/streaming/logs/
+local_scripts/streaming/lib/
+local_scripts/streaming/__pycache__/
+local_scripts/streaming/**/__pycache__/
+local_scripts/streaming/**/*.pyc
+
+# Streaming temp files
+local_scripts/streaming/temp_remote_script.sh
+local_scripts/streaming/output_data/
+local_scripts/streaming/**/*.log
 
 # Terraform state / local vars
 *.tfstate
@@ -103,6 +117,3 @@ local_scripts/batch/backfill/**/*.success
 local_scripts/batch/backfill/**/*.parquet
 local_scripts/batch/backfill/**/*.csv
 local_scripts/batch/backfill/**/*.jsonl
-
-# Streaming pipeline will be productionized later
-local_scripts/streaming/
