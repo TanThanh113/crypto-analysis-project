@@ -1,0 +1,49 @@
+version: 2
+
+models:
+  - name: mart_ml_training_dataset_hourly_microstructure_v1
+    description: >
+      Scratch-only ML training dataset view that adds the 19 validated
+      microstructure selected lag-return features for parity checking. This
+      model does not replace the production training mart.
+    columns:
+      - name: ml_training_row_sk
+        tests:
+          - not_null
+          - unique
+
+      - name: hour_ts
+        tests:
+          - not_null
+
+      - name: symbol
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BTC', 'ETH']
+
+      - name: split_name
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['train', 'validation', 'test']
+
+      - name: quote_volume_lag_1h
+        description: "Previous available hourly quote volume by symbol."
+
+      - name: quote_volume_24h_lag_1h
+        description: "Previous available 24h quote volume by symbol."
+
+      - name: quote_volume_zscore_24h
+        description: "Past-only 24h z-score of quote volume by symbol."
+
+      - name: liquidity_regime_high
+        description: "Binary high-liquidity regime flag from quote_volume_zscore_24h."
+
+      - name: liquidity_regime_low
+        description: "Binary low-liquidity regime flag from quote_volume_zscore_24h."
+
+      - name: return_24h_symbol_zscore
+        description: "Expanding symbol-history z-score of lagged 24h return."
