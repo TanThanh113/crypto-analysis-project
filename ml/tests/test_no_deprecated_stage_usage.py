@@ -11,6 +11,7 @@ SOURCE_FILES = [
     ML_ROOT / "feature_contract.py",
     ML_ROOT / "strategy_config.py",
     ML_ROOT / "time_split.py",
+    ML_ROOT / "promotion_gate.py",
 ]
 
 FORBIDDEN_PATTERNS = [

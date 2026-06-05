@@ -49,6 +49,11 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from feature_contract import get_feature_contract_metadata
 from mlflow_utils import handle_mlflow_error, is_mlflow_enabled, log_training_run
+from promotion_gate import (
+    PromotionGateConfig,
+    PromotionGateResult,
+    evaluate_promotion_gate,
+)
 from strategy_config import (
     TrainingStrategy,
     get_strategy,
@@ -58,6 +63,7 @@ from strategy_config import (
 from time_split import apply_train_window
 
 DEFAULT_VALID_CLASSES = ["UP", "DOWN", "FLAT"]
+TRUE_VALUES = {"1", "true", "yes", "y", "on"}
 MODEL_KEY_BY_CHOICE = {
     "logistic": "logistic_regression_baseline",
     "lightgbm": "lightgbm_classifier",
@@ -610,6 +616,13 @@ def evaluate_model(model: Pipeline, x: pd.DataFrame, y: pd.Series) -> Dict[str, 
         average="macro",
         zero_division=0,
     )
+    _, per_class_recall, _, _ = precision_recall_fscore_support(
+        y,
+        pred,
+        labels=classes,
+        average=None,
+        zero_division=0,
+    )
 
     # Return all calculated metrics for evaluation.
     return {
@@ -617,6 +630,7 @@ def evaluate_model(model: Pipeline, x: pd.DataFrame, y: pd.Series) -> Dict[str, 
         "accuracy": float(accuracy_score(y, pred)),
         "precision_macro": float(precision),
         "recall_macro": float(recall),
+        "per_class_recall_min": float(np.min(per_class_recall)) if len(per_class_recall) else None,
         "f1_macro": float(f1),
         "auc_ovr": safe_auc(y, proba, classes),
         "log_loss": safe_log_loss(y, proba, classes),
@@ -721,6 +735,7 @@ def save_latest_manifest(
     run_id: str,
     artifact_uri: Optional[str] = None,
     manifest_name: str = "latest_model.json",
+    promotion_result: Optional[PromotionGateResult] = None,
 ) -> Path:
     manifest = {
         "model_name": model_config.model_name,
@@ -734,12 +749,124 @@ def save_latest_manifest(
         "updated_at": utc_now().isoformat(),
     }
 
+    if promotion_result is not None:
+        manifest.update(
+            {
+                "promotion_status": promotion_result.status,
+                "promotion_passed": promotion_result.passed,
+                "promotion_reasons": promotion_result.reasons,
+                "promotion_checked_at": promotion_result.checked_at,
+            }
+        )
+
     manifest_path = artifact_dir / manifest_name
 
     with manifest_path.open("w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
     return manifest_path
+
+
+def load_local_champion_metrics(
+    artifact_dir: Path,
+    manifest_name: str,
+) -> Optional[Dict[str, Any]]:
+    manifest_path = artifact_dir / manifest_name
+    if not manifest_path.exists():
+        return None
+
+    try:
+        with manifest_path.open("r", encoding="utf-8") as f:
+            manifest = json.load(f)
+
+        artifact_path = manifest.get("artifact_path") or manifest.get("local_artifact_path")
+        if not artifact_path or is_gcs_uri(str(artifact_path)):
+            return None
+
+        local_artifact_path = Path(str(artifact_path)).expanduser().resolve()
+        if not local_artifact_path.exists():
+            return None
+
+        bundle = joblib.load(local_artifact_path)
+        metrics = bundle.get("metrics")
+        if isinstance(metrics, dict):
+            return metrics
+
+    except Exception as exc:
+        print(f"[promotion][WARN] Could not load local champion metrics: {exc}")
+
+    return None
+
+
+def build_promotion_gate_config(
+    config: Dict[str, Any],
+    training_config: TrainingConfig,
+) -> PromotionGateConfig:
+    promotion = config.get("promotion", {})
+
+    def float_setting(name: str, env_name: str, default: float) -> float:
+        env_value = os.environ.get(env_name)
+        if env_value is not None:
+            return float(env_value)
+        return float(promotion.get(name, default))
+
+    def int_setting(name: str, env_name: str, default: int) -> int:
+        env_value = os.environ.get(env_name)
+        if env_value is not None:
+            return int(env_value)
+        return int(promotion.get(name, default))
+
+    return PromotionGateConfig(
+        margin=float_setting("margin", "ML_PROMOTION_MARGIN", 0.0),
+        max_test_f1_degradation=float_setting(
+            "max_test_f1_degradation",
+            "ML_PROMOTION_MAX_TEST_F1_DEGRADATION",
+            0.05,
+        ),
+        max_log_loss_degradation=float_setting(
+            "max_log_loss_degradation",
+            "ML_PROMOTION_MAX_LOG_LOSS_DEGRADATION",
+            0.10,
+        ),
+        min_row_count=int_setting(
+            "min_row_count",
+            "ML_PROMOTION_MIN_ROW_COUNT",
+            training_config.min_rows_per_split,
+        ),
+        min_per_class_recall=float_setting(
+            "min_per_class_recall",
+            "ML_PROMOTION_MIN_PER_CLASS_RECALL",
+            0.0,
+        ),
+        min_feature_completeness_score=float_setting(
+            "min_feature_completeness_score",
+            "ML_PROMOTION_MIN_FEATURE_COMPLETENESS_SCORE",
+            0.0,
+        ),
+    )
+
+
+def promotion_fail_on_reject(config: Dict[str, Any]) -> bool:
+    env_value = os.environ.get("ML_PROMOTION_FAIL_ON_REJECT")
+    if env_value is not None:
+        return env_value.strip().lower() in TRUE_VALUES
+
+    promotion = config.get("promotion", {})
+    return bool(promotion.get("fail_on_reject", False))
+
+
+def save_promotion_gate_artifact(
+    artifact_dir: Path,
+    run_id: str,
+    promotion_result: PromotionGateResult,
+) -> Path:
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    promotion_path = artifact_dir / f"promotion_gate_{run_id}.json"
+
+    with promotion_path.open("w", encoding="utf-8") as f:
+        json.dump(promotion_result.to_dict(), f, indent=2, default=str)
+
+    return promotion_path
 
 
 def train_and_store_candidate(
@@ -811,6 +938,7 @@ def train_and_store_candidate(
         "model_artifact_uri": model_artifact_uri,
         "metrics": split_metrics,
         "base_model_key": base_model_key,
+        "training_summary": summarize_training_data(df, model_config),
     }
 
     if strategy is not None:
@@ -935,6 +1063,7 @@ def build_training_summary_artifact(
     feature_contract_metadata: Dict[str, Any],
     best_model_key: str,
     best_artifact_uri: str,
+    promotion_result: Optional[PromotionGateResult] = None,
 ) -> Path:
     summary_path = artifact_dir / f"training_summary_{run_id}.json"
     payload = {
@@ -943,6 +1072,11 @@ def build_training_summary_artifact(
         "best_artifact_uri": best_artifact_uri,
         "training_summary": summary,
         "feature_contract": feature_contract_metadata,
+        "promotion_gate": (
+            promotion_result.to_dict()
+            if promotion_result is not None
+            else None
+        ),
         "created_at": utc_now().isoformat(),
     }
 
@@ -965,6 +1099,8 @@ def log_optional_mlflow_training_run(
     best_model_key: str,
     best_artifact_uri: str,
     manifest_path: Path,
+    promotion_result: Optional[PromotionGateResult] = None,
+    promotion_gate_path: Optional[Path] = None,
 ) -> None:
     if not is_mlflow_enabled():
         return
@@ -997,6 +1133,18 @@ def log_optional_mlflow_training_run(
             "best_model_key": best_model_key,
             "total_row_count": training_summary["total_row_count"],
         }
+
+        if promotion_result is not None:
+            params.update(
+                {
+                    "promotion_status": promotion_result.status,
+                    "promotion_passed": promotion_result.passed,
+                    "promotion_reason_count": len(promotion_result.reasons),
+                    "promotion_candidate_score": promotion_result.candidate_score,
+                    "promotion_champion_score": promotion_result.champion_score,
+                    "promotion_margin": promotion_result.margin,
+                }
+            )
 
         for split_name, row_count in training_summary.get("split_counts", {}).items():
             params[f"split.{split_name}.row_count"] = row_count
@@ -1037,6 +1185,14 @@ def log_optional_mlflow_training_run(
             "best_model_key": best_model_key,
         }
         tags.update(strategy_metadata)
+        if promotion_result is not None:
+            tags.update(
+                {
+                    "promotion_status": promotion_result.status,
+                    "promotion_passed": str(promotion_result.passed).lower(),
+                    "promotion_reason_count": len(promotion_result.reasons),
+                }
+            )
 
         summary_artifact = build_training_summary_artifact(
             artifact_dir=artifact_dir,
@@ -1045,11 +1201,14 @@ def log_optional_mlflow_training_run(
             feature_contract_metadata=feature_contract_metadata,
             best_model_key=best_model_key,
             best_artifact_uri=best_artifact_uri,
+            promotion_result=promotion_result,
         )
 
         artifact_paths: List[Path] = [config_path, summary_artifact]
         if manifest_path.exists():
             artifact_paths.append(manifest_path)
+        if promotion_gate_path and promotion_gate_path.exists():
+            artifact_paths.append(promotion_gate_path)
 
         for result in results.values():
             artifact_path = result.get("artifact_path")
@@ -1294,6 +1453,39 @@ def main() -> int:
         str(best_artifact_path),
     )
 
+    champion_metrics = load_local_champion_metrics(
+        artifact_dir=artifact_dir,
+        manifest_name=latest_manifest_name,
+    )
+    best_training_summary = results[best_model_key].get(
+        "training_summary",
+        summarize_training_data(df, model_config),
+    )
+    promotion_result = evaluate_promotion_gate(
+        candidate_metrics=results[best_model_key]["metrics"],
+        champion_metrics=champion_metrics,
+        config=build_promotion_gate_config(config, training_config),
+        split_date_ranges=best_training_summary.get("split_date_ranges"),
+    )
+    promotion_gate_path = save_promotion_gate_artifact(
+        artifact_dir=artifact_dir,
+        run_id=run_id,
+        promotion_result=promotion_result,
+    )
+
+    print(
+        f"[promotion] Status: {promotion_result.status} "
+        f"(passed={promotion_result.passed})"
+    )
+    for reason in promotion_result.reasons:
+        print(f"[promotion] - {reason}")
+
+    if not promotion_result.passed and promotion_fail_on_reject(config):
+        raise RuntimeError(
+            "Promotion gate rejected the candidate and "
+            "ML_PROMOTION_FAIL_ON_REJECT=true."
+        )
+
     # Save the latest model manifest.
     manifest_path = save_latest_manifest(
         artifact_dir=artifact_dir,
@@ -1303,6 +1495,7 @@ def main() -> int:
         run_id=run_id,
         artifact_uri=best_artifact_uri,
         manifest_name=latest_manifest_name,
+        promotion_result=promotion_result,
     )
 
     if artifact_storage in ("gcs", "both"):
@@ -1347,6 +1540,8 @@ def main() -> int:
         best_model_key=best_model_key,
         best_artifact_uri=best_artifact_uri,
         manifest_path=manifest_path,
+        promotion_result=promotion_result,
+        promotion_gate_path=promotion_gate_path,
     )
 
     print("[train] Done.")

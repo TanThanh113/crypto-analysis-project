@@ -30,6 +30,7 @@ COPY mlflow_utils.py ./
 COPY feature_contract.py ./
 COPY strategy_config.py ./
 COPY time_split.py ./
+COPY promotion_gate.py ./
 COPY feature_list.yml ./
 
 # Local artifacts folder.
