@@ -99,6 +99,54 @@ models:
         tests:
           - not_null
 
+      - name: quote_volume_lag_1h
+        description: "Previous hourly quote volume by symbol."
+
+      - name: quote_volume_24h_lag_1h
+        description: "Previous 24h quote volume by symbol."
+
+      - name: quote_volume_zscore_24h
+        description: "Past-only 24h z-score of lagged quote volume by symbol."
+
+      - name: volume_zscore_24h_lag_1h
+        description: "Previous available value of the existing 24h volume z-score."
+
+      - name: liquidity_regime_high
+        description: "Binary high-liquidity regime flag from quote_volume_zscore_24h."
+
+      - name: liquidity_regime_low
+        description: "Binary low-liquidity regime flag from quote_volume_zscore_24h."
+
+      - name: liquidity_risk_score_lag_1h
+        description: "Previous hourly liquidity risk score by symbol."
+
+      - name: is_eth_x_quote_volume_zscore_24h
+        description: "ETH interaction term for quote_volume_zscore_24h."
+
+      - name: return_4h_lag_1h
+        description: "Previous available 4h return by symbol."
+
+      - name: return_24h_lag_1h
+        description: "Previous available 24h return by symbol."
+
+      - name: return_24h_symbol_zscore
+        description: "Expanding symbol-history z-score of lagged 24h return."
+
+      - name: return_1h_rolling_mean_4h
+        description: "Rolling mean of lagged 1h returns over the previous 4 rows."
+
+      - name: return_1h_rolling_sum_4h
+        description: "Rolling sum of lagged 1h returns over the previous 4 rows."
+
+      - name: return_1h_rolling_mean_24h
+        description: "Rolling mean of lagged 1h returns over the previous 24 rows."
+
+      - name: return_1h_rolling_sum_24h
+        description: "Rolling sum of lagged 1h returns over the previous 24 rows."
+
+      - name: rolling_drawdown_24h
+        description: "Lagged cumulative log-return drawdown versus the previous 24h rolling peak."
+
       - name: is_training_feature_ready
         tests:
           - not_null
