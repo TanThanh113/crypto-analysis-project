@@ -7,12 +7,14 @@ from pathlib import Path
 ML_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_FILES = [
     ML_ROOT / "train_model.py",
+    ML_ROOT / "predict_latest.py",
     ML_ROOT / "mlflow_utils.py",
     ML_ROOT / "feature_contract.py",
     ML_ROOT / "strategy_config.py",
     ML_ROOT / "time_split.py",
     ML_ROOT / "promotion_gate.py",
     ML_ROOT / "mlflow_registry.py",
+    ML_ROOT / "model_loader.py",
 ]
 
 FORBIDDEN_PATTERNS = [

@@ -9,6 +9,42 @@ description: |
   Safe no-op when mart_ml_prediction_input_latest has 0 rows.
   Uses Workload Identity and downloads the latest model artifact from GCS.
 
+inputs:
+  - id: model_source
+    type: STRING
+    defaults: artifact
+    description: Predict model source. Keep artifact for current production behavior.
+
+  - id: mlflow_tracking_uri
+    type: STRING
+    defaults: ""
+    description: Optional MLflow tracking URI for registry-based prediction.
+
+  - id: mlflow_model_uri
+    type: STRING
+    defaults: ""
+    description: Optional explicit MLflow model URI, for example models:/name@champion.
+
+  - id: mlflow_registered_model_name
+    type: STRING
+    defaults: ""
+    description: Optional MLflow registered model name for alias-based prediction.
+
+  - id: mlflow_model_alias
+    type: STRING
+    defaults: champion
+    description: MLflow model alias used when registry prediction is enabled.
+
+  - id: registry_fallback_to_artifact
+    type: BOOL
+    defaults: true
+    description: Fallback to latest_model.json artifact when registry loading fails.
+
+  - id: registry_strict
+    type: BOOL
+    defaults: false
+    description: Fail prediction if registry loading fails. Disabled by default.
+
 # Enable only after streaming producer is running reliably.
 triggers:
   - id: after_streaming_hourly_transform_gke
@@ -68,9 +104,34 @@ tasks:
 
               echo "[predict] Running predict_latest.py..."
 
-              python predict_latest.py \
-                --config feature_list.yml \
-                --artifact-dir artifacts
+              if [ -n "{{ inputs.mlflow_tracking_uri }}" ]; then
+                export MLFLOW_TRACKING_URI="{{ inputs.mlflow_tracking_uri }}"
+              fi
+
+              PREDICT_ARGS="--config feature_list.yml --artifact-dir artifacts --model-source {{ inputs.model_source }}"
+
+              if [ -n "{{ inputs.mlflow_model_uri }}" ]; then
+                PREDICT_ARGS="${PREDICT_ARGS} --mlflow-model-uri {{ inputs.mlflow_model_uri }}"
+              fi
+
+              if [ -n "{{ inputs.mlflow_registered_model_name }}" ]; then
+                PREDICT_ARGS="${PREDICT_ARGS} --mlflow-registered-model-name {{ inputs.mlflow_registered_model_name }}"
+              fi
+
+              if [ -n "{{ inputs.mlflow_model_alias }}" ]; then
+                PREDICT_ARGS="${PREDICT_ARGS} --mlflow-model-alias {{ inputs.mlflow_model_alias }}"
+              fi
+
+              if [ "{{ inputs.registry_fallback_to_artifact }}" != "true" ]; then
+                PREDICT_ARGS="${PREDICT_ARGS} --no-registry-fallback-to-artifact"
+              fi
+
+              if [ "{{ inputs.registry_strict }}" = "true" ]; then
+                PREDICT_ARGS="${PREDICT_ARGS} --registry-strict"
+              fi
+
+              echo "[predict] Running: python predict_latest.py ${PREDICT_ARGS}"
+              python predict_latest.py ${PREDICT_ARGS}
 
               echo "[predict] Prediction completed."
           env:
