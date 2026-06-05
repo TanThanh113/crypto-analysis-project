@@ -50,6 +50,12 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from feature_contract import get_feature_contract_metadata
 from mlflow_utils import handle_mlflow_error, is_mlflow_enabled, log_training_run
 from mlflow_registry import MLflowRegistryResult, register_model_if_enabled
+from optuna_tuning import (
+    OptunaTuningResult,
+    OptunaTuningSettings,
+    get_optuna_settings,
+    tune_lightgbm_pipeline,
+)
 from promotion_gate import (
     PromotionGateConfig,
     PromotionGateResult,
@@ -686,6 +692,7 @@ def save_bundle(
     training_table_fqn: str,
     run_id: str,
     strategy: Optional[TrainingStrategy] = None,
+    optuna_result: Optional[OptunaTuningResult] = None,
 ) -> Path:
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
@@ -719,6 +726,9 @@ def save_bundle(
 
     if strategy is not None:
         bundle.update(strategy.metadata())
+
+    if optuna_result is not None and optuna_result.enabled:
+        bundle["optuna"] = optuna_result.to_dict()
 
     artifact_path = artifact_dir / (
         f"{model_config.model_name}__{model_key}__{artifact_version}.joblib"
@@ -961,6 +971,12 @@ def build_registry_tags(
     if log_loss_value is not None:
         tags["log_loss"] = log_loss_value
 
+    optuna_result = best_result.get("optuna")
+    if isinstance(optuna_result, dict):
+        tags["optuna_enabled"] = optuna_result.get("enabled", False)
+        tags["optuna_metric"] = optuna_result.get("metric_name")
+        tags["optuna_best_trial_number"] = optuna_result.get("best_trial_number")
+
     return tags
 
 
@@ -979,6 +995,7 @@ def train_and_store_candidate(
     run_id: str,
     dry_run: bool,
     strategy: Optional[TrainingStrategy] = None,
+    optuna_settings: Optional[OptunaTuningSettings] = None,
 ) -> Dict[str, Any]:
     print(f"[train] Training {model_key}...")
 
@@ -989,6 +1006,38 @@ def train_and_store_candidate(
     fit_kwargs = {}
     if w_train is not None:
         fit_kwargs["model__sample_weight"] = w_train
+
+    optuna_result: Optional[OptunaTuningResult] = None
+    if optuna_settings is not None and optuna_settings.enabled:
+        optuna_result = tune_lightgbm_pipeline(
+            model_key=model_key,
+            base_model_key=base_model_key,
+            model=model,
+            x_train=x_train,
+            y_train=y_train,
+            x_val=x_val,
+            y_val=y_val,
+            sample_weight=w_train,
+            settings=optuna_settings,
+            random_state=model_config.random_state,
+        )
+
+        if optuna_result.enabled:
+            for reason in optuna_result.reasons:
+                print(f"[optuna] {model_key}: {reason}")
+
+            if optuna_result.best_params:
+                model.set_params(
+                    **{
+                        f"model__{key}": value
+                        for key, value in optuna_result.best_params.items()
+                    }
+                )
+                print(
+                    f"[optuna] {model_key}: best "
+                    f"{optuna_result.metric_name}={optuna_result.best_value} "
+                    f"trial={optuna_result.best_trial_number}"
+                )
 
     model.fit(x_train, y_train, **fit_kwargs)
 
@@ -1011,6 +1060,7 @@ def train_and_store_candidate(
         training_table_fqn=bq_config.training_table_fqn,
         run_id=run_id,
         strategy=strategy,
+        optuna_result=optuna_result,
     )
 
     model_artifact_uri = str(artifact_path)
@@ -1038,6 +1088,9 @@ def train_and_store_candidate(
 
     if strategy is not None:
         result["strategy_metadata"] = strategy.metadata()
+
+    if optuna_result is not None and optuna_result.enabled:
+        result["optuna"] = optuna_result.to_dict()
 
     print(f"[train] Saved artifact: {artifact_path}")
     print(
@@ -1148,7 +1201,45 @@ def flatten_model_metrics(results: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
             for metric_name, metric_value in metrics.items():
                 flattened[f"{model_key}.{split_name}.{metric_name}"] = metric_value
 
+        optuna_result = result.get("optuna")
+        if isinstance(optuna_result, dict) and optuna_result.get("best_value") is not None:
+            flattened[f"{model_key}.optuna_best_value"] = optuna_result.get("best_value")
+
     return flattened
+
+
+def collect_optuna_results(results: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    return {
+        model_key: result["optuna"]
+        for model_key, result in results.items()
+        if isinstance(result.get("optuna"), dict)
+    }
+
+
+def save_optuna_summary_artifact(
+    *,
+    artifact_dir: Path,
+    run_id: str,
+    results: Dict[str, Dict[str, Any]],
+    best_model_key: str,
+) -> Optional[Path]:
+    optuna_results = collect_optuna_results(results)
+    if not optuna_results:
+        return None
+
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    summary_path = artifact_dir / f"optuna_summary_{run_id}.json"
+    payload = {
+        "run_id": run_id,
+        "best_model_key": best_model_key,
+        "optuna": optuna_results,
+        "created_at": utc_now().isoformat(),
+    }
+
+    with summary_path.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, default=str)
+
+    return summary_path
 
 
 def build_training_summary_artifact(
@@ -1196,6 +1287,7 @@ def log_optional_mlflow_training_run(
     manifest_path: Path,
     promotion_result: Optional[PromotionGateResult] = None,
     promotion_gate_path: Optional[Path] = None,
+    optuna_summary_path: Optional[Path] = None,
 ) -> None:
     if not is_mlflow_enabled():
         return
@@ -1251,6 +1343,32 @@ def log_optional_mlflow_training_run(
         params.update(feature_contract_metadata)
         params.update(strategy_metadata)
 
+        optuna_results = collect_optuna_results(results)
+        best_optuna = best_result.get("optuna")
+        params.update(
+            {
+                "optuna_enabled": bool(optuna_results),
+                "optuna_requested": bool(args.enable_optuna),
+                "optuna_n_trials": args.optuna_n_trials,
+                "optuna_timeout_seconds": args.optuna_timeout_seconds,
+                "optuna_metric": args.optuna_metric,
+                "optuna_direction": args.optuna_direction,
+                "optuna_strategy": args.optuna_strategy,
+            }
+        )
+
+        if isinstance(best_optuna, dict):
+            params.update(
+                {
+                    "optuna_best_trial_number": best_optuna.get("best_trial_number"),
+                    "optuna_best_value": best_optuna.get("best_value"),
+                    "optuna_study_name": best_optuna.get("study_name"),
+                    "optuna_completed_trials": best_optuna.get("n_trials"),
+                }
+            )
+            for param_name, param_value in dict(best_optuna.get("best_params") or {}).items():
+                params[f"optuna_best_{param_name}"] = param_value
+
         if args.strategy_matrix:
             strategy_names = [
                 result.get("strategy_metadata", {}).get("strategy_name")
@@ -1278,8 +1396,16 @@ def log_optional_mlflow_training_run(
             "feature_contract_hash": feature_contract_metadata.get("feature_contract_hash"),
             "git_sha": args.git_sha,
             "best_model_key": best_model_key,
+            "optuna_enabled": str(bool(optuna_results)).lower(),
         }
         tags.update(strategy_metadata)
+        if isinstance(best_optuna, dict):
+            tags.update(
+                {
+                    "optuna_metric": best_optuna.get("metric_name"),
+                    "optuna_best_trial_number": best_optuna.get("best_trial_number"),
+                }
+            )
         if promotion_result is not None:
             tags.update(
                 {
@@ -1304,16 +1430,22 @@ def log_optional_mlflow_training_run(
             artifact_paths.append(manifest_path)
         if promotion_gate_path and promotion_gate_path.exists():
             artifact_paths.append(promotion_gate_path)
+        if optuna_summary_path and optuna_summary_path.exists():
+            artifact_paths.append(optuna_summary_path)
 
         for result in results.values():
             artifact_path = result.get("artifact_path")
             if artifact_path:
                 artifact_paths.append(Path(artifact_path))
 
+        mlflow_metrics = flatten_model_metrics(results)
+        if isinstance(best_optuna, dict) and best_optuna.get("best_value") is not None:
+            mlflow_metrics["optuna_best_value"] = best_optuna.get("best_value")
+
         log_training_run(
             run_name=f"{model_config.model_name}_{model_config.model_version}_{run_id}",
             params=params,
-            metrics=flatten_model_metrics(results),
+            metrics=mlflow_metrics,
             tags=tags,
             artifact_paths=artifact_paths,
         )
@@ -1386,6 +1518,73 @@ def parse_args() -> argparse.Namespace:
             "GCS folder for model artifacts, for example "
             "gs://your-bucket/ml-artifacts/crypto_direction_lgbm_v1"
         ),
+    )
+
+    parser.add_argument(
+        "--enable-optuna",
+        action="store_true",
+        default=os.environ.get("ML_OPTUNA_ENABLED", "").strip().lower() in TRUE_VALUES,
+        help="Enable optional Optuna tuning for LightGBM candidates.",
+    )
+
+    parser.add_argument(
+        "--optuna-n-trials",
+        type=int,
+        default=int(os.environ.get("ML_OPTUNA_N_TRIALS", "20")),
+        help="Number of Optuna trials when tuning is enabled.",
+    )
+
+    parser.add_argument(
+        "--optuna-timeout-seconds",
+        type=int,
+        default=(
+            int(os.environ["ML_OPTUNA_TIMEOUT_SECONDS"])
+            if os.environ.get("ML_OPTUNA_TIMEOUT_SECONDS")
+            else None
+        ),
+        help="Optional Optuna timeout in seconds.",
+    )
+
+    parser.add_argument(
+        "--optuna-study-name",
+        default=os.environ.get("ML_OPTUNA_STUDY_NAME"),
+        help="Optional Optuna study name.",
+    )
+
+    parser.add_argument(
+        "--optuna-storage-uri",
+        default=os.environ.get("ML_OPTUNA_STORAGE_URI"),
+        help="Optional Optuna storage URI, for example sqlite:///tmp/optuna.db.",
+    )
+
+    parser.add_argument(
+        "--optuna-direction",
+        choices=["maximize", "minimize"],
+        default=os.environ.get("ML_OPTUNA_DIRECTION", "maximize"),
+        help="Optuna optimization direction.",
+    )
+
+    parser.add_argument(
+        "--optuna-metric",
+        choices=["f1_macro", "accuracy", "log_loss"],
+        default=os.environ.get("ML_OPTUNA_METRIC", "f1_macro"),
+        help="Validation metric optimized by Optuna.",
+    )
+
+    parser.add_argument(
+        "--optuna-strategy",
+        default=os.environ.get("ML_OPTUNA_STRATEGY"),
+        help=(
+            "Optional strategy or model key to tune. "
+            "When empty, all selected LightGBM candidates can be tuned."
+        ),
+    )
+
+    parser.add_argument(
+        "--optuna-fail-on-error",
+        action="store_true",
+        default=os.environ.get("ML_OPTUNA_FAIL_ON_ERROR", "").strip().lower() in TRUE_VALUES,
+        help="Fail training if optional Optuna tuning fails.",
     )
 
     return parser.parse_args()
@@ -1463,6 +1662,17 @@ def main() -> int:
     artifact_ts = trained_at.strftime("%Y%m%d_%H%M%S")
     
     bq_config, model_config, training_config = build_configs(config) # Build the configurations.
+    optuna_settings = get_optuna_settings(
+        enabled=args.enable_optuna,
+        n_trials=args.optuna_n_trials,
+        timeout_seconds=args.optuna_timeout_seconds,
+        study_name=args.optuna_study_name,
+        storage_uri=args.optuna_storage_uri,
+        direction=args.optuna_direction,
+        metric_name=args.optuna_metric,
+        strategy_name=args.optuna_strategy,
+        fail_on_error=args.optuna_fail_on_error,
+    )
 
     # Connect to BigQuery.
     client = bigquery.Client(project=bq_config.project_id)
@@ -1472,6 +1682,14 @@ def main() -> int:
     print(f"[train] Metrics table: {bq_config.metrics_table_fqn}")
     print(f"[train] Model: {model_config.model_name}:{model_config.model_version}")
     print(f"[train] Target: {model_config.target_name}")
+    if optuna_settings.enabled:
+        print(
+            "[optuna] Enabled: "
+            f"trials={optuna_settings.n_trials}, "
+            f"metric={optuna_settings.metric_name}, "
+            f"direction={optuna_settings.direction}, "
+            f"target={optuna_settings.strategy_name or 'selected_lightgbm_candidates'}"
+        )
 
     df = query_training_data(client, bq_config, model_config) # To retrieve raw data from BigQuery to the machine in DataFrame format.
     df = clean_features(df, model_config, training_config) # Clean the data.
@@ -1520,6 +1738,7 @@ def main() -> int:
                 run_id=run_id,
                 dry_run=args.dry_run,
                 strategy=strategy,
+                optuna_settings=optuna_settings,
             )
     else:
         models = filter_models_for_choice(build_models(model_config), args.model_choice)
@@ -1537,6 +1756,7 @@ def main() -> int:
                 bq_config=bq_config,
                 run_id=run_id,
                 dry_run=args.dry_run,
+                optuna_settings=optuna_settings,
             )
 
     # Choose the best model.
@@ -1546,6 +1766,12 @@ def main() -> int:
     best_artifact_uri = results[best_model_key].get(
         "model_artifact_uri",
         str(best_artifact_path),
+    )
+    optuna_summary_path = save_optuna_summary_artifact(
+        artifact_dir=artifact_dir,
+        run_id=run_id,
+        results=results,
+        best_model_key=best_model_key,
     )
 
     champion_metrics = load_local_champion_metrics(
@@ -1637,6 +1863,7 @@ def main() -> int:
         manifest_path=manifest_path,
         promotion_result=promotion_result,
         promotion_gate_path=promotion_gate_path,
+        optuna_summary_path=optuna_summary_path,
     )
 
     registry_result = register_model_if_enabled(

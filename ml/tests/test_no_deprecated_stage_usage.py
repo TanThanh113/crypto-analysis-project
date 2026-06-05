@@ -15,6 +15,7 @@ SOURCE_FILES = [
     ML_ROOT / "promotion_gate.py",
     ML_ROOT / "mlflow_registry.py",
     ML_ROOT / "model_loader.py",
+    ML_ROOT / "optuna_tuning.py",
 ]
 
 FORBIDDEN_PATTERNS = [

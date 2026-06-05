@@ -115,9 +115,29 @@ matrix manually, run the Kestra flow `the_ml_strategy_matrix_train_gke`. MLflow
 experiment logging and Model Registry registration are enabled only when the
 corresponding Kestra inputs or environment variables are supplied, such as
 `mlflow_tracking_uri`, `mlflow_enable_model_registry`,
-`mlflow_update_model_alias`, and `mlflow_model_alias`. Prediction still uses the
-GCS/local `latest_model.json` artifact contract; it does not load from MLflow
-Registry aliases.
+`mlflow_update_model_alias`, and `mlflow_model_alias`. Prediction uses the
+GCS/local `latest_model.json` artifact contract by default. MLflow Registry alias
+loading for prediction is optional and must be enabled with model source flags or
+Kestra inputs.
+
+Optuna tuning is also optional and is not used by the daily training flow unless
+you explicitly enable it. It only tunes LightGBM candidates. A small local dry
+run looks like:
+
+```bash
+cd ml
+.venv/bin/python train_model.py \
+  --config feature_list.yml \
+  --strategy lightgbm_rolling_90d \
+  --artifact-storage local \
+  --artifact-dir artifacts/local_test \
+  --enable-optuna \
+  --optuna-n-trials 20 \
+  --dry-run
+```
+
+For Kestra, use the manual flow `the_ml_strategy_matrix_train_gke` and set
+`enable_optuna=true`. Daily defaults remain tuning-free to avoid surprise cost.
 
 ---
 

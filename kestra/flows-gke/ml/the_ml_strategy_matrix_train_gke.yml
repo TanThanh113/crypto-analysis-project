@@ -75,6 +75,46 @@ inputs:
     defaults: false
     description: Fail training when promotion gate rejects candidate. Disabled by default.
 
+  - id: enable_optuna
+    type: BOOL
+    defaults: false
+    description: Enable optional Optuna tuning for selected LightGBM candidates. Disabled by default.
+
+  - id: optuna_n_trials
+    type: INT
+    defaults: 20
+    description: Number of Optuna trials when tuning is enabled.
+
+  - id: optuna_timeout_seconds
+    type: STRING
+    defaults: ""
+    description: Optional Optuna timeout in seconds. Leave empty for no timeout.
+
+  - id: optuna_study_name
+    type: STRING
+    defaults: ""
+    description: Optional Optuna study name.
+
+  - id: optuna_storage_uri
+    type: STRING
+    defaults: ""
+    description: Optional Optuna storage URI such as sqlite:///tmp/crypto_optuna.db.
+
+  - id: optuna_metric
+    type: STRING
+    defaults: f1_macro
+    description: Validation metric optimized by Optuna.
+
+  - id: optuna_strategy
+    type: STRING
+    defaults: ""
+    description: Optional strategy or model key to tune. Empty tunes selected LightGBM candidates.
+
+  - id: optuna_fail_on_error
+    type: BOOL
+    defaults: false
+    description: Fail training when optional Optuna tuning fails. Disabled by default.
+
 tasks:
   - id: train_strategy_matrix
     type: io.kestra.plugin.kubernetes.core.PodCreate
@@ -143,6 +183,30 @@ tasks:
                 TRAIN_ARGS="${TRAIN_ARGS} --strategy-matrix"
               elif [ -n "{{ inputs.strategy }}" ]; then
                 TRAIN_ARGS="${TRAIN_ARGS} --strategy {{ inputs.strategy }}"
+              fi
+
+              if [ "{{ inputs.enable_optuna }}" = "true" ]; then
+                TRAIN_ARGS="${TRAIN_ARGS} --enable-optuna --optuna-n-trials {{ inputs.optuna_n_trials }} --optuna-metric {{ inputs.optuna_metric }}"
+
+                if [ -n "{{ inputs.optuna_timeout_seconds }}" ]; then
+                  TRAIN_ARGS="${TRAIN_ARGS} --optuna-timeout-seconds {{ inputs.optuna_timeout_seconds }}"
+                fi
+
+                if [ -n "{{ inputs.optuna_study_name }}" ]; then
+                  TRAIN_ARGS="${TRAIN_ARGS} --optuna-study-name {{ inputs.optuna_study_name }}"
+                fi
+
+                if [ -n "{{ inputs.optuna_storage_uri }}" ]; then
+                  TRAIN_ARGS="${TRAIN_ARGS} --optuna-storage-uri {{ inputs.optuna_storage_uri }}"
+                fi
+
+                if [ -n "{{ inputs.optuna_strategy }}" ]; then
+                  TRAIN_ARGS="${TRAIN_ARGS} --optuna-strategy {{ inputs.optuna_strategy }}"
+                fi
+
+                if [ "{{ inputs.optuna_fail_on_error }}" = "true" ]; then
+                  TRAIN_ARGS="${TRAIN_ARGS} --optuna-fail-on-error"
+                fi
               fi
 
               echo "[train] Running: python train_model.py ${TRAIN_ARGS}"

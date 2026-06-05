@@ -33,6 +33,7 @@ COPY time_split.py ./
 COPY promotion_gate.py ./
 COPY mlflow_registry.py ./
 COPY model_loader.py ./
+COPY optuna_tuning.py ./
 COPY feature_list.yml ./
 
 # Local artifacts folder.
