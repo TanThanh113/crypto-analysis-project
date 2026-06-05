@@ -12,6 +12,7 @@ SOURCE_FILES = [
     ML_ROOT / "strategy_config.py",
     ML_ROOT / "time_split.py",
     ML_ROOT / "promotion_gate.py",
+    ML_ROOT / "mlflow_registry.py",
 ]
 
 FORBIDDEN_PATTERNS = [
@@ -21,10 +22,6 @@ FORBIDDEN_PATTERNS = [
     re.compile(r"get_latest_versions\s*\([^)]*\bstages\s*=", re.DOTALL),
     re.compile(r"models:/[^\s'\"]+/Production"),
     re.compile(r"models:/[^\s'\"]+/Staging"),
-    re.compile(r"\bregister_model\s*\("),
-    re.compile(r"\bcreate_registered_model\s*\("),
-    re.compile(r"\bset_registered_model_alias\s*\("),
-    re.compile(r"\bget_model_version_by_alias\s*\("),
 ]
 
 

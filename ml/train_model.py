@@ -49,6 +49,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from feature_contract import get_feature_contract_metadata
 from mlflow_utils import handle_mlflow_error, is_mlflow_enabled, log_training_run
+from mlflow_registry import MLflowRegistryResult, register_model_if_enabled
 from promotion_gate import (
     PromotionGateConfig,
     PromotionGateResult,
@@ -869,6 +870,100 @@ def save_promotion_gate_artifact(
     return promotion_path
 
 
+def update_manifest_with_registry_result(
+    manifest_path: Path,
+    registry_result: MLflowRegistryResult,
+) -> None:
+    if not manifest_path.exists():
+        return
+
+    with manifest_path.open("r", encoding="utf-8") as f:
+        manifest = json.load(f)
+
+    manifest.update(
+        {
+            "registry_status": registry_result.status,
+            "registry_reasons": registry_result.reasons or [],
+            "mlflow_registered_model_name": registry_result.registered_model_name,
+            "mlflow_model_version": registry_result.model_version,
+            "mlflow_model_alias": registry_result.model_alias,
+            "mlflow_model_uri": registry_result.model_uri,
+            "mlflow_registry_run_id": registry_result.run_id,
+        }
+    )
+
+    with manifest_path.open("w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, default=str)
+
+
+def _metric_value(
+    metrics: Dict[str, Any],
+    split_name: str,
+    metric_name: str,
+) -> Optional[float]:
+    split_metrics = metrics.get(split_name, {})
+    if not isinstance(split_metrics, dict):
+        return None
+
+    value = split_metrics.get(metric_name)
+    if value is None:
+        return None
+
+    try:
+        metric_value = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    if metric_value != metric_value:
+        return None
+
+    return metric_value
+
+
+def build_registry_tags(
+    *,
+    config_path: Path,
+    args: argparse.Namespace,
+    bq_config: BigQueryConfig,
+    model_config: ModelConfig,
+    results: Dict[str, Dict[str, Any]],
+    best_model_key: str,
+    promotion_result: PromotionGateResult,
+) -> Dict[str, Any]:
+    best_result = results[best_model_key]
+    strategy_metadata = dict(best_result.get("strategy_metadata", {}) or {})
+    metrics = best_result.get("metrics", {})
+
+    feature_contract_metadata = get_feature_contract_metadata(config_path)
+    validation_f1 = _metric_value(metrics, "validation", "f1_macro")
+    test_f1 = _metric_value(metrics, "test", "f1_macro")
+    log_loss_value = _metric_value(metrics, "validation", "log_loss")
+
+    tags: Dict[str, Any] = {
+        "strategy_name": strategy_metadata.get("strategy_name", best_model_key),
+        "model_choice": strategy_metadata.get("model_choice", args.model_choice),
+        "model_name": model_config.model_name,
+        "model_version": model_config.model_version,
+        "feature_contract_hash": feature_contract_metadata.get("feature_contract_hash"),
+        "promotion_status": promotion_result.status,
+        "promotion_passed": promotion_result.passed,
+        "git_sha": args.git_sha,
+        "training_table": bq_config.training_table_fqn,
+        "target_name": model_config.target_name,
+        "created_by": "crypto-analysis-project",
+        "phase": "mlflow_mlops_upgrade",
+    }
+
+    if validation_f1 is not None:
+        tags["validation_f1_macro"] = validation_f1
+    if test_f1 is not None:
+        tags["test_f1_macro"] = test_f1
+    if log_loss_value is not None:
+        tags["log_loss"] = log_loss_value
+
+    return tags
+
+
 def train_and_store_candidate(
     *,
     model_key: str,
@@ -1543,6 +1638,30 @@ def main() -> int:
         promotion_result=promotion_result,
         promotion_gate_path=promotion_gate_path,
     )
+
+    registry_result = register_model_if_enabled(
+        model=results[best_model_key]["model"],
+        run_name=f"{model_config.model_name}_{model_config.model_version}_{run_id}_registry",
+        default_registered_model_name=model_config.model_name,
+        promotion_result=promotion_result,
+        tags=build_registry_tags(
+            config_path=config_path,
+            args=args,
+            bq_config=bq_config,
+            model_config=model_config,
+            results=results,
+            best_model_key=best_model_key,
+            promotion_result=promotion_result,
+        ),
+    )
+    update_manifest_with_registry_result(manifest_path, registry_result)
+
+    if registry_result.status == "disabled":
+        print("[registry] Disabled. Skipping MLflow Model Registry.")
+    else:
+        print(f"[registry] Status: {registry_result.status}")
+        for reason in registry_result.reasons or []:
+            print(f"[registry] - {reason}")
 
     print("[train] Done.")
     return 0
