@@ -1,26 +1,29 @@
-id: the_ml_train_daily_gke
+id: the_ml_strategy_matrix_train_gke
 namespace: crypto.data_engineering
 
+labels:
+  system.readOnly: "true"
+
 description: |
-  GKE version of daily ML training.
-  Runs ML and dbt tasks as Kubernetes pods using Workload Identity.
-  No service account JSON key is required.
+  Manual GKE ML training flow for strategy matrix, promotion gate, and optional MLflow Registry.
+  This flow has no trigger and should be launched manually when you want to compare strategies.
+  Prediction still uses GCS/local artifacts and latest_model.json; it does not load from MLflow Registry.
 
 inputs:
   - id: model_choice
     type: STRING
     defaults: auto
-    description: Legacy model choice for train_model.py. Keep auto for current production behavior.
+    description: Legacy model choice used only when strategy_matrix=false and strategy is empty.
 
   - id: strategy
     type: STRING
     defaults: ""
-    description: Optional single training strategy name. Leave empty for legacy model_choice behavior.
+    description: Optional single training strategy name. Leave empty when running the full matrix.
 
   - id: strategy_matrix
     type: BOOL
-    defaults: false
-    description: Train all configured strategies. Disabled by default to avoid extra daily cost.
+    defaults: true
+    description: Train all configured strategies. Enabled by default for this manual flow.
 
   - id: artifact_storage
     type: STRING
@@ -71,22 +74,9 @@ inputs:
     type: BOOL
     defaults: false
     description: Fail training when promotion gate rejects candidate. Disabled by default.
-  
-labels:
-  system.readOnly: "true"
 
-triggers:
-  - id: after_dbt_daily_market_transform
-    type: io.kestra.plugin.core.trigger.Flow
-    preconditions:
-      id: dbt_daily_market_success
-      flows:
-        - namespace: crypto.data_engineering
-          flowId: the_dbt_daily_market_transform
-          states: [SUCCESS]
-          
 tasks:
-  - id: train_model
+  - id: train_strategy_matrix
     type: io.kestra.plugin.kubernetes.core.PodCreate
     namespace: kestra
     waitUntilRunning: PT10M
@@ -94,7 +84,7 @@ tasks:
       serviceAccountName: kestra
       restartPolicy: Never
       containers:
-        - name: train-model
+        - name: train-strategy-matrix
           image: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-ml:latest
           imagePullPolicy: Always
           command:
@@ -103,7 +93,7 @@ tasks:
             - |
               set -e
 
-              echo "[train] Starting ML training on GKE..."
+              echo "[train] Starting manual ML strategy training on GKE..."
               cd /app/ml
 
               if [ "{{ inputs.strategy_matrix }}" = "true" ] && [ -n "{{ inputs.strategy }}" ]; then
@@ -158,7 +148,7 @@ tasks:
               echo "[train] Running: python train_model.py ${TRAIN_ARGS}"
               python train_model.py ${TRAIN_ARGS}
 
-              echo "[train] ML training completed."
+              echo "[train] Manual ML strategy training completed."
           env:
             - name: GCP_PROJECT_ID
               value: project-lambda-crypto
@@ -196,14 +186,6 @@ tasks:
 
               echo "[dbt] Starting dbt model metrics build on GKE..."
               cd /app/crypto_dbt
-
-              echo "[dbt] DBT_TARGET=${DBT_TARGET}"
-              echo "[dbt] GCP_PROJECT_ID=${GCP_PROJECT_ID}"
-              echo "[dbt] BQ_ANALYTICS_DATASET=${BQ_ANALYTICS_DATASET}"
-              echo "[dbt] BQ_ML_OUTPUTS_DATASET=${BQ_ML_OUTPUTS_DATASET}"
-              echo "[dbt] BQ_LOCATION=${BQ_LOCATION}"
-
-              uv run dbt debug
 
               uv run dbt build \
                 --select mart_ml_model_metrics \

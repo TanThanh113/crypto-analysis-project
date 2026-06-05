@@ -109,6 +109,16 @@ Current ML setup includes:
 * dbt mart for model monitoring
 * Baseline classification model for 4-hour direction prediction
 
+MLOps training upgrades are optional. The GKE daily training flow keeps the
+legacy `--model-choice auto` behavior by default. To compare the full strategy
+matrix manually, run the Kestra flow `the_ml_strategy_matrix_train_gke`. MLflow
+experiment logging and Model Registry registration are enabled only when the
+corresponding Kestra inputs or environment variables are supplied, such as
+`mlflow_tracking_uri`, `mlflow_enable_model_registry`,
+`mlflow_update_model_alias`, and `mlflow_model_alias`. Prediction still uses the
+GCS/local `latest_model.json` artifact contract; it does not load from MLflow
+Registry aliases.
+
 ---
 
 ## Docker Images
