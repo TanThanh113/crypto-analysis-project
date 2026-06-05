@@ -49,8 +49,19 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from feature_contract import get_feature_contract_metadata
 from mlflow_utils import handle_mlflow_error, is_mlflow_enabled, log_training_run
+from strategy_config import (
+    TrainingStrategy,
+    get_strategy,
+    list_strategies,
+    list_strategy_names,
+)
+from time_split import apply_train_window
 
 DEFAULT_VALID_CLASSES = ["UP", "DOWN", "FLAT"]
+MODEL_KEY_BY_CHOICE = {
+    "logistic": "logistic_regression_baseline",
+    "lightgbm": "lightgbm_classifier",
+}
 
 # To structure the configuration settings, making the code clearer and easier to manage:
 # Use a dataclass to define the configuration settings(BigQuery, Model, Training, etc.)
@@ -449,6 +460,30 @@ def build_models(model_config: ModelConfig) -> Dict[str, Pipeline]:
     }
 
 
+def filter_models_for_choice(
+    models: Dict[str, Pipeline],
+    model_choice: str,
+) -> Dict[str, Pipeline]:
+    if model_choice == "auto":
+        return models
+
+    model_key = MODEL_KEY_BY_CHOICE[model_choice]
+    return {model_key: models[model_key]}
+
+
+def resolve_requested_strategies(args: argparse.Namespace) -> List[TrainingStrategy]:
+    if args.strategy and args.strategy_matrix:
+        raise ValueError("Use either --strategy or --strategy-matrix, not both.")
+
+    if args.strategy_matrix:
+        return list_strategies()
+
+    if args.strategy:
+        return [get_strategy(args.strategy)]
+
+    return []
+
+
 # Calculate the weight for each data row.
 def get_sample_weight(df: pd.DataFrame, model_config: ModelConfig,) -> Optional[np.ndarray]:
     column = model_config.sample_weight_column
@@ -590,6 +625,14 @@ def evaluate_model(model: Pipeline, x: pd.DataFrame, y: pd.Series) -> Dict[str, 
 
 # Return the model metadata for the given model key.
 def model_metadata(model_key: str) -> Tuple[str, str, str]:
+    try:
+        strategy = get_strategy(model_key)
+    except KeyError:
+        strategy = None
+
+    if strategy is not None:
+        return model_metadata(strategy.base_model_key)
+
     if model_key == "logistic_regression_baseline":
         return "linear_baseline", "logistic_regression", "classification"
 
@@ -610,7 +653,8 @@ def choose_best_model(results: Dict[str, Dict[str, Any]], primary_metric: str) -
             validation_metric = -1.0
 
         # Tie-breaker for LightGBM models.
-        tie_breaker = 0.000001 if model_key == "lightgbm_classifier" else 0.0
+        _, algorithm, _ = model_metadata(model_key)
+        tie_breaker = 0.000001 if algorithm == "lightgbm" else 0.0
         scored.append((float(validation_metric) + tie_breaker, model_key))
 
     return sorted(scored, reverse=True)[0][1]
@@ -620,11 +664,13 @@ def save_bundle(
     model: Pipeline,
     model_config: ModelConfig,
     model_key: str,
+    base_model_key: str,
     artifact_version: str,
     artifact_dir: Path,
     metrics: Dict[str, Any],
     training_table_fqn: str,
     run_id: str,
+    strategy: Optional[TrainingStrategy] = None,
 ) -> Path:
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
@@ -640,6 +686,7 @@ def save_bundle(
         "model_version": model_config.model_version,
         "artifact_version": artifact_version,
         "model_key": model_key,
+        "base_model_key": base_model_key,
         "model_family": model_family,
         "algorithm": algorithm,
         "problem_type": problem_type,
@@ -654,6 +701,9 @@ def save_bundle(
         "run_id": run_id,
         "saved_at": utc_now().isoformat(),
     }
+
+    if strategy is not None:
+        bundle.update(strategy.metadata())
 
     artifact_path = artifact_dir / (
         f"{model_config.model_name}__{model_key}__{artifact_version}.joblib"
@@ -690,6 +740,89 @@ def save_latest_manifest(
         json.dump(manifest, f, indent=2)
 
     return manifest_path
+
+
+def train_and_store_candidate(
+    *,
+    model_key: str,
+    base_model_key: str,
+    model: Pipeline,
+    df: pd.DataFrame,
+    model_config: ModelConfig,
+    artifact_dir: Path,
+    artifact_storage: str,
+    artifact_gcs_uri: Optional[str],
+    artifact_ts: str,
+    bq_config: BigQueryConfig,
+    run_id: str,
+    dry_run: bool,
+    strategy: Optional[TrainingStrategy] = None,
+) -> Dict[str, Any]:
+    print(f"[train] Training {model_key}...")
+
+    x_train, y_train, w_train = split_xy(df, "train", model_config)
+    x_val, y_val, _ = split_xy(df, "validation", model_config)
+    x_test, y_test, _ = split_xy(df, "test", model_config)
+
+    fit_kwargs = {}
+    if w_train is not None:
+        fit_kwargs["model__sample_weight"] = w_train
+
+    model.fit(x_train, y_train, **fit_kwargs)
+
+    split_metrics = {
+        "train": evaluate_model(model, x_train, y_train),
+        "validation": evaluate_model(model, x_val, y_val),
+        "test": evaluate_model(model, x_test, y_test),
+    }
+
+    artifact_version = f"{model_config.model_version}__{model_key}__{artifact_ts}"
+
+    artifact_path = save_bundle(
+        model=model,
+        model_config=model_config,
+        model_key=model_key,
+        base_model_key=base_model_key,
+        artifact_version=artifact_version,
+        artifact_dir=artifact_dir,
+        metrics=split_metrics,
+        training_table_fqn=bq_config.training_table_fqn,
+        run_id=run_id,
+        strategy=strategy,
+    )
+
+    model_artifact_uri = str(artifact_path)
+
+    if artifact_storage in ("gcs", "both"):
+        if dry_run:
+            print("[artifact] Dry run enabled. Skipping GCS artifact upload.")
+        else:
+            model_artifact_uri = upload_file_to_gcs(
+                local_path=artifact_path,
+                destination_uri=join_gcs_uri(
+                    artifact_gcs_uri,
+                    artifact_path.name,
+                ),
+            )
+
+    result: Dict[str, Any] = {
+        "model": model,
+        "artifact_path": artifact_path,
+        "model_artifact_uri": model_artifact_uri,
+        "metrics": split_metrics,
+        "base_model_key": base_model_key,
+    }
+
+    if strategy is not None:
+        result["strategy_metadata"] = strategy.metadata()
+
+    print(f"[train] Saved artifact: {artifact_path}")
+    print(
+        f"[train] Validation metrics for {model_key}:\n"
+        f"{json.dumps(split_metrics['validation'], indent=2)}"
+    )
+
+    return result
 
 # Write the evaluation metrics to BigQuery.
 def write_metrics_to_bigquery(
@@ -839,11 +972,23 @@ def log_optional_mlflow_training_run(
     try:
         feature_contract_metadata = get_feature_contract_metadata(config_path)
         training_summary = summarize_training_data(df, model_config)
+        best_result = results.get(best_model_key, {})
+        strategy_metadata = dict(best_result.get("strategy_metadata", {}) or {})
+        effective_model_choice = strategy_metadata.get("model_choice", args.model_choice)
+        training_mode = (
+            "strategy_matrix"
+            if args.strategy_matrix
+            else "strategy"
+            if args.strategy
+            else "legacy"
+        )
 
         params: Dict[str, Any] = {
             "model_name": model_config.model_name,
             "model_version": model_config.model_version,
-            "model_choice": args.model_choice,
+            "model_choice": effective_model_choice,
+            "cli_model_choice": args.model_choice,
+            "training_mode": training_mode,
             "target_name": model_config.target_name,
             "primary_metric": model_config.primary_metric,
             "training_table": bq_config.training_table_fqn,
@@ -861,17 +1006,37 @@ def log_optional_mlflow_training_run(
             params[f"split.{split_name}.end"] = date_range.get("end")
 
         params.update(feature_contract_metadata)
+        params.update(strategy_metadata)
+
+        if args.strategy_matrix:
+            strategy_names = [
+                result.get("strategy_metadata", {}).get("strategy_name")
+                for result in results.values()
+                if result.get("strategy_metadata")
+            ]
+            params["strategy_matrix.names"] = ",".join(
+                str(strategy_name)
+                for strategy_name in strategy_names
+                if strategy_name
+            )
 
         tags = {
-            "mlflow_phase": "phase_1_experiment_logging",
+            "mlflow_phase": (
+                "phase_2_strategy_matrix"
+                if strategy_metadata
+                else "phase_1_experiment_logging"
+            ),
+            "training_mode": training_mode,
             "model_name": model_config.model_name,
             "model_version": model_config.model_version,
+            "model_choice": effective_model_choice,
             "target_name": model_config.target_name,
             "training_table": bq_config.training_table_fqn,
             "feature_contract_hash": feature_contract_metadata.get("feature_contract_hash"),
             "git_sha": args.git_sha,
             "best_model_key": best_model_key,
         }
+        tags.update(strategy_metadata)
 
         summary_artifact = build_training_summary_artifact(
             artifact_dir=artifact_dir,
@@ -923,6 +1088,19 @@ def parse_args() -> argparse.Namespace:
         choices=["auto", "logistic", "lightgbm"],
         default="auto",
         help="Which model to train.",
+    )
+
+    parser.add_argument(
+        "--strategy",
+        choices=list_strategy_names(),
+        default=None,
+        help="Train exactly one named strategy. Overrides --model-choice for that run.",
+    )
+
+    parser.add_argument(
+        "--strategy-matrix",
+        action="store_true",
+        help="Train all configured strategies and choose the best by the primary metric.",
     )
 
     parser.add_argument(
@@ -1052,83 +1230,60 @@ def main() -> int:
     print("[train] Target distribution:")
     print(df[model_config.target_name].value_counts().to_string())
 
-    # Data Segmentation and Model Filtering
-    x_train, y_train, w_train = split_xy(df, "train", model_config)
-    x_val, y_val, _ = split_xy(df, "validation", model_config)
-    x_test, y_test, _ = split_xy(df, "test", model_config)
-
-    models = build_models(model_config)
-
-    if args.model_choice == "logistic":
-        models = {
-            "logistic_regression_baseline": models["logistic_regression_baseline"],
-        }
-    elif args.model_choice == "lightgbm":
-        models = {
-            "lightgbm_classifier": models["lightgbm_classifier"],
-        }
-
     results: Dict[str, Dict[str, Any]] = {} # Store the results of each model.
+    requested_strategies = resolve_requested_strategies(args)
 
-    # Training loop
-    for model_key, model in models.items():
-        print(f"[train] Training {model_key}...")
+    if requested_strategies:
+        print("[train] Strategy mode enabled:")
+        for strategy in requested_strategies:
+            print(
+                "  - "
+                f"{strategy.name} "
+                f"(model={strategy.model_type}, "
+                f"window_days={strategy.train_window_days or 'all_history'})"
+            )
 
-        fit_kwargs = {}
-        if w_train is not None:
-            fit_kwargs["model__sample_weight"] = w_train
+            strategy_df = apply_train_window(
+                df,
+                split_column=model_config.split_column,
+                train_window_days=strategy.train_window_days,
+            )
+            validate_training_data(strategy_df, model_config, training_config)
 
-        model.fit(x_train, y_train, **fit_kwargs)
-
-        # Evaluate the model.
-        split_metrics = {
-            "train": evaluate_model(model, x_train, y_train),
-            "validation": evaluate_model(model, x_val, y_val),
-            "test": evaluate_model(model, x_test, y_test),
-        }
-
-        # Bundle and store the model.
-        artifact_version = f"{model_config.model_version}__{model_key}__{artifact_ts}"
-
-        # Save the model bundle.
-        artifact_path = save_bundle(
-            model=model,
-            model_config=model_config,
-            model_key=model_key,
-            artifact_version=artifact_version,
-            artifact_dir=artifact_dir,
-            metrics=split_metrics,
-            training_table_fqn=bq_config.training_table_fqn,
-            run_id=run_id,
-        )
-
-        model_artifact_uri = str(artifact_path)
-
-        if artifact_storage in ("gcs", "both"):
-            if args.dry_run:
-                print("[artifact] Dry run enabled. Skipping GCS artifact upload.")
-            else:
-                model_artifact_uri = upload_file_to_gcs(
-                    local_path=artifact_path,
-                    destination_uri=join_gcs_uri(
-                        artifact_gcs_uri,
-                        artifact_path.name,
-                    ),
-                )
-
-        # Record the results
-        results[model_key] = {
-            "model": model,
-            "artifact_path": artifact_path,
-            "model_artifact_uri": model_artifact_uri,
-            "metrics": split_metrics,
-        }
-
-        print(f"[train] Saved artifact: {artifact_path}")
-        print(
-            f"[train] Validation metrics for {model_key}:\n"
-            f"{json.dumps(split_metrics['validation'], indent=2)}"
-        )
+            strategy_models = build_models(model_config)
+            model = strategy_models[strategy.base_model_key]
+            results[strategy.name] = train_and_store_candidate(
+                model_key=strategy.name,
+                base_model_key=strategy.base_model_key,
+                model=model,
+                df=strategy_df,
+                model_config=model_config,
+                artifact_dir=artifact_dir,
+                artifact_storage=artifact_storage,
+                artifact_gcs_uri=artifact_gcs_uri,
+                artifact_ts=artifact_ts,
+                bq_config=bq_config,
+                run_id=run_id,
+                dry_run=args.dry_run,
+                strategy=strategy,
+            )
+    else:
+        models = filter_models_for_choice(build_models(model_config), args.model_choice)
+        for model_key, model in models.items():
+            results[model_key] = train_and_store_candidate(
+                model_key=model_key,
+                base_model_key=model_key,
+                model=model,
+                df=df,
+                model_config=model_config,
+                artifact_dir=artifact_dir,
+                artifact_storage=artifact_storage,
+                artifact_gcs_uri=artifact_gcs_uri,
+                artifact_ts=artifact_ts,
+                bq_config=bq_config,
+                run_id=run_id,
+                dry_run=args.dry_run,
+            )
 
     # Choose the best model.
     best_model_key = choose_best_model(results, model_config.primary_metric)

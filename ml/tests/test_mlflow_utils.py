@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from mlflow_utils import get_mlflow_settings, log_training_run
+from strategy_config import get_strategy
 
 
 def test_mlflow_disabled_path_does_not_fail(monkeypatch):
@@ -75,3 +76,38 @@ def test_mlflow_error_is_swallowed_by_default(monkeypatch, tmp_path):
     monkeypatch.setattr(mlflow, "set_tracking_uri", raise_error)
 
     assert log_training_run(run_name="error") is False
+
+
+def test_mlflow_logs_strategy_tags_to_local_sqlite(monkeypatch, tmp_path):
+    tracking_db = tmp_path / "mlflow.db"
+    artifact_root = tmp_path / "artifacts"
+    strategy = get_strategy("lightgbm_rolling_180d")
+
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{tracking_db}")
+    monkeypatch.setenv("MLFLOW_EXPERIMENT_NAME", "phase_2_strategy_tags")
+    monkeypatch.setenv("MLFLOW_ARTIFACT_ROOT", artifact_root.as_uri())
+
+    assert log_training_run(
+        run_name="strategy-tags",
+        params={"primary_metric": "f1_macro", **strategy.metadata()},
+        metrics={"lightgbm_rolling_180d.validation.f1_macro": 0.55},
+        tags=strategy.metadata(),
+    ) is True
+
+    import mlflow
+    from mlflow.tracking import MlflowClient
+
+    mlflow.set_tracking_uri(f"sqlite:///{tracking_db}")
+    experiment = mlflow.get_experiment_by_name("phase_2_strategy_tags")
+    assert experiment is not None
+
+    client = MlflowClient(tracking_uri=f"sqlite:///{tracking_db}")
+    runs = client.search_runs([experiment.experiment_id])
+    assert len(runs) == 1
+
+    tags = runs[0].data.tags
+    assert tags["strategy_name"] == "lightgbm_rolling_180d"
+    assert tags["strategy_model_type"] == "lightgbm"
+    assert tags["strategy_train_window_days"] == "180"
+    assert tags["strategy_validation_policy"] == "rolling_window_before_validation"
+    assert tags["model_choice"] == "lightgbm"

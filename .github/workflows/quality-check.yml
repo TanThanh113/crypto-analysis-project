@@ -141,5 +141,5 @@ jobs:
         working-directory: ml
         run: |
           python -m pip install -r requirements-dev.txt
-          python -m compileall train_model.py predict_latest.py mlflow_utils.py feature_contract.py
+          python -m compileall train_model.py predict_latest.py mlflow_utils.py feature_contract.py strategy_config.py time_split.py
           pytest tests
