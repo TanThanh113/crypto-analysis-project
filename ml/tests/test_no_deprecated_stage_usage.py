@@ -9,6 +9,8 @@ SOURCE_FILES = [
     ML_ROOT / "train_model.py",
     ML_ROOT / "mlflow_utils.py",
     ML_ROOT / "feature_contract.py",
+    ML_ROOT / "strategy_config.py",
+    ML_ROOT / "time_split.py",
 ]
 
 FORBIDDEN_PATTERNS = [
