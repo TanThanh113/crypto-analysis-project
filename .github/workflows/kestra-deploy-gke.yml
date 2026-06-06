@@ -9,6 +9,7 @@ env:
   KESTRA_SERVER: http://127.0.0.1:8080
   PROD_FLOW_NAMESPACE: crypto.data_engineering
   IMAGE_BASE: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker
+  ENABLE_ML_KESTRA_DEPLOY: ${{ vars.ENABLE_ML_KESTRA_DEPLOY || 'false' }}
 
 on:
   push:
@@ -18,14 +19,22 @@ on:
       - "helm/kestra/**"
       - "k8s/kestra/**"
       - "kestra/flows-gke/**"
+      - ".github/scripts/deploy_kestra_flows.py"
       - ".github/workflows/kestra-deploy-gke.yml"
   pull_request:
     branches:
       - main
     paths:
       - "kestra/flows-gke/**"
+      - ".github/scripts/deploy_kestra_flows.py"
       - ".github/workflows/kestra-deploy-gke.yml"
   workflow_dispatch:
+    inputs:
+      enable_ml_kestra_deploy:
+        description: Deploy ML Kestra flows in this manual run.
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   deploy-kestra:
@@ -45,6 +54,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Check for changed paths
         uses: dorny/paths-filter@v3
@@ -56,8 +67,15 @@ jobs:
               - 'k8s/kestra/**'
               - '.github/workflows/kestra-deploy-gke.yml'
             kestra_flows:
-              - 'kestra/flows-gke/**'
-              - '.github/workflows/kestra-deploy-gke.yml'
+              - 'kestra/flows-gke/**/*.yml'
+              - 'kestra/flows-gke/**/*.yaml'
+            kestra_non_ml_flows:
+              - 'kestra/flows-gke/**/*.yml'
+              - 'kestra/flows-gke/**/*.yaml'
+              - '!kestra/flows-gke/ml/**'
+            kestra_ml_flows:
+              - 'kestra/flows-gke/ml/**/*.yml'
+              - 'kestra/flows-gke/ml/**/*.yaml'
 
       - name: Compute deploy metadata
         id: meta
@@ -86,16 +104,56 @@ jobs:
           echo "FLOW_NAMESPACE=${FLOW_NAMESPACE}"
           echo "FLOW_DIR=${FLOW_DIR}"
 
+      - name: Compute Kestra deploy plan
+        id: deploy_plan
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CHANGED_FILES_PATH="${RUNNER_TEMP}/kestra_changed_files.txt"
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags --depth=1 origin \
+              "${{ github.event.pull_request.base.sha }}" \
+              "${{ github.event.pull_request.head.sha }}" \
+              || true
+
+            git diff --name-only \
+              "${{ github.event.pull_request.base.sha }}" \
+              "${{ github.event.pull_request.head.sha }}" \
+              > "${CHANGED_FILES_PATH}"
+          else
+            : > "${CHANGED_FILES_PATH}"
+          fi
+
+          ENABLE_ML_DEPLOY="${ENABLE_ML_KESTRA_DEPLOY:-false}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            ENABLE_ML_DEPLOY="false"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ENABLE_ML_DEPLOY="${{ inputs.enable_ml_kestra_deploy }}"
+          fi
+          ENABLE_ML_DEPLOY="$(printf '%s' "${ENABLE_ML_DEPLOY}" | tr '[:upper:]' '[:lower:]')"
+
+          python .github/scripts/kestra_deploy_plan.py \
+            --event-name "${{ github.event_name }}" \
+            --enable-ml-kestra-deploy "${ENABLE_ML_DEPLOY}" \
+            --changed-files "${CHANGED_FILES_PATH}" \
+            --flow-root "kestra/flows-gke" \
+            --github-output "${GITHUB_OUTPUT}"
+
       - name: Authenticate to Google Cloud
+        if: steps.deploy_plan.outputs.has_any_flows_to_deploy == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.filter.outputs.helm_infra == 'true')
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_CICD_SERVICE_ACCOUNT }}
 
       - name: Set up gcloud
+        if: steps.deploy_plan.outputs.has_any_flows_to_deploy == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.filter.outputs.helm_infra == 'true')
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Get GKE credentials
+        if: steps.deploy_plan.outputs.has_any_flows_to_deploy == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.filter.outputs.helm_infra == 'true')
         uses: google-github-actions/get-gke-credentials@v2
         with:
           project_id: ${{ env.PROJECT_ID }}
@@ -139,7 +197,7 @@ jobs:
       # This copies kestra/flows-gke to /tmp, rewrites namespace to crypto.preview.pr_N,
       # removes top-level triggers, and swaps Artifact Registry :latest images to :pr-N.
       - name: Generate PR preview Kestra flows
-        if: github.event_name == 'pull_request' && steps.filter.outputs.kestra_flows == 'true'
+        if: github.event_name == 'pull_request' && steps.deploy_plan.outputs.has_any_flows_to_deploy == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -159,6 +217,7 @@ jobs:
           preview_namespace = "${{ steps.meta.outputs.flow_namespace }}"
           prod_namespace = os.environ["PROD_FLOW_NAMESPACE"]
           image_tag = "${{ steps.meta.outputs.image_tag }}"
+          enable_ml_deploy = "${{ steps.deploy_plan.outputs.should_deploy_ml_flows }}" == "true"
 
           if target_root.exists():
               shutil.rmtree(target_root)
@@ -189,6 +248,13 @@ jobs:
 
           for src in sorted(source_root.rglob("*.yml")) + sorted(source_root.rglob("*.yaml")):
               rel = src.relative_to(source_root)
+              if rel.parts and rel.parts[0] == "ml" and not enable_ml_deploy:
+                  print(
+                      "Skipping ML Kestra preview flow because "
+                      f"ENABLE_ML_KESTRA_DEPLOY is not true: {src}"
+                  )
+                  continue
+
               dst = target_root / rel
               dst.parent.mkdir(parents=True, exist_ok=True)
 
@@ -272,8 +338,14 @@ jobs:
           print("Generated preview files are clean: no labels, no BOOLEAN.")
           PY
 
+      - name: Skip Kestra server port-forward and flow deploy
+        if: steps.deploy_plan.outputs.has_any_flows_to_deploy != 'true'
+        run: |
+          echo "No deployable Kestra flows; skipping Kestra server port-forward"
+          echo "No deployable Kestra flows after ML deploy gating; skipping Kestra port-forward/deploy."
+
       - name: Port-forward Kestra webserver
-        if: steps.filter.outputs.kestra_flows == 'true'
+        if: steps.deploy_plan.outputs.has_any_flows_to_deploy == 'true'
         run: |
           kubectl port-forward deployment/kestra-webserver 8080:8080 -n ${KESTRA_NAMESPACE} > /tmp/kestra-port-forward.log 2>&1 &
           echo $! > /tmp/kestra-port-forward.pid
@@ -292,20 +364,21 @@ jobs:
           exit 1
 
       - name: Check Kestra webserver authentication
-        if: steps.filter.outputs.kestra_flows == 'true'
+        if: steps.deploy_plan.outputs.has_any_flows_to_deploy == 'true'
         run: |
           curl -fsS \
             -u "${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}:${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}" \
             ${KESTRA_SERVER}/ > /dev/null
 
       - name: Deploy Kestra flows through REST API
-        if: steps.filter.outputs.kestra_flows == 'true'
+        if: steps.deploy_plan.outputs.has_any_flows_to_deploy == 'true'
         shell: bash
         env:
           KESTRA_USERNAME: ${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}
           KESTRA_PASSWORD: ${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}
           KESTRA_TENANT: main
           KESTRA_FLOW_DIR: ${{ steps.meta.outputs.flow_dir }}
+          ENABLE_ML_KESTRA_DEPLOY: ${{ steps.deploy_plan.outputs.should_deploy_ml_flows }}
         run: |
           set -euo pipefail
 
@@ -313,6 +386,7 @@ jobs:
           echo "Mode: ${{ steps.meta.outputs.deploy_mode }}"
           echo "Namespace: ${{ steps.meta.outputs.flow_namespace }}"
           echo "Directory: ${KESTRA_FLOW_DIR}"
+          echo "ENABLE_ML_KESTRA_DEPLOY=${ENABLE_ML_KESTRA_DEPLOY}"
 
           python -m pip install --user pyyaml
           python .github/scripts/deploy_kestra_flows.py

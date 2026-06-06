@@ -17,29 +17,22 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      docker_required: ${{ steps.filter.outputs.docker_required }}
-      kestra_required: ${{ steps.filter.outputs.kestra_required }}
+      docker_required: ${{ steps.ci_plan.outputs.should_build_docker }}
+      kestra_required: ${{ steps.ci_plan.outputs.has_any_flows_to_deploy }}
       dbt_required: ${{ steps.filter.outputs.dbt_required }}
       terraform_required: ${{ steps.filter.outputs.terraform_required }}
       docs_only: ${{ steps.detect_docs.outputs.docs_only }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Detect changed paths
         uses: dorny/paths-filter@v3
         id: filter
         with:
           filters: |
-            docker_required:
-              - 'local_scripts/batch/**'
-              - 'dbt_transform/**'
-              - 'ml/**'
-              - 'docker/**'
-              - '.github/workflows/docker-build-push.yml'
-            kestra_required:
-              - 'kestra/flows-gke/**'
-              - '.github/workflows/kestra-deploy-gke.yml'
             dbt_required:
               - 'dbt_transform/**'
             terraform_required:
@@ -66,6 +59,35 @@ jobs:
             echo "docs_only=false" >> "$GITHUB_OUTPUT"
             echo "This PR changes non-doc files."
           fi
+
+      - name: Compute CI deploy/build plan
+        id: ci_plan
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CHANGED_FILES_PATH="${RUNNER_TEMP}/ci_changed_files.txt"
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags --depth=1 origin \
+              "${{ github.event.pull_request.base.sha }}" \
+              "${{ github.event.pull_request.head.sha }}" \
+              || true
+
+            git diff --name-only \
+              "${{ github.event.pull_request.base.sha }}" \
+              "${{ github.event.pull_request.head.sha }}" \
+              > "${CHANGED_FILES_PATH}"
+          else
+            : > "${CHANGED_FILES_PATH}"
+          fi
+
+          python .github/scripts/kestra_deploy_plan.py \
+            --event-name "${{ github.event_name }}" \
+            --enable-ml-kestra-deploy "false" \
+            --changed-files "${CHANGED_FILES_PATH}" \
+            --flow-root "kestra/flows-gke" \
+            --github-output "${GITHUB_OUTPUT}"
 
   # =================================================================
   # JOB 2: CỔNG TỔNG ĐỒNG BỘ - ĐỢI VÀ KIỂM TRA TRẠNG THÁI TOÀN CỤC

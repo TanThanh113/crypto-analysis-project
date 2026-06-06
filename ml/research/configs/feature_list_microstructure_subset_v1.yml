@@ -1,0 +1,105 @@
+# Research-only feature contract for Step B2 microstructure safe subset trial.
+# Based on production ml/feature_list.yml plus only the 9 B1.5 strict-safe features.
+# Do not use this file as production feature_list.yml until explicitly approved.
+
+bigquery:
+  project_id_env: GCP_PROJECT_ID
+  analytics_dataset_env: BQ_ANALYTICS_DATASET
+  ml_outputs_dataset_env: BQ_ML_OUTPUTS_DATASET
+  default_analytics_dataset: dbt_quants_dev
+  default_ml_outputs_dataset: ml_outputs
+  training_table: mart_ml_training_dataset_hourly
+  prediction_input_table: mart_ml_prediction_input_latest
+  metrics_table: model_metrics
+  predictions_table: model_predictions
+
+model:
+  model_name: crypto_direction_microstructure_subset_research_v1
+  model_version: research_v1
+  model_family: crypto_direction
+  algorithm: logistic
+  target_name: future_direction_4h
+  split_column: split_name
+  sample_weight_column: sample_weight_4h
+  primary_metric: f1_macro
+  random_state: 42
+  valid_classes:
+    - UP
+    - DOWN
+    - FLAT
+  class_probability_mapping:
+    UP: prob_up
+    DOWN: prob_down
+    FLAT: prob_flat
+  categorical_features:
+    - symbol
+  numeric_features:
+    # Existing production contract features.
+    - return_1h
+    - return_4h
+    - return_24h
+    - log_return_1h
+    - realized_volatility_24h
+    - rolling_avg_return_7h
+    - rolling_avg_return_24h
+    - rolling_volatility_24h
+    - rolling_volatility_7d
+    - quote_volume
+    - quote_volume_24h
+    - volume_zscore_24h
+    - taker_buy_quote_ratio
+    - avg_basis_pct
+    - max_abs_basis_pct
+    - avg_funding_rate_coin
+    - avg_funding_rate_usdt
+    - avg_annualized_funding_coin
+    - avg_annualized_funding_usdt
+    - avg_arbitrage_spread
+    - max_leverage_stress
+    - avg_leverage_stress
+    - sp500_return_1d
+    - nasdaq_return_1d
+    - gold_return_1d
+    - vix_return_1d
+    - oil_return_1d
+    - nasdaq_sp500_ratio
+    - safe_haven_bid_1d
+    - market_momentum_score
+    - social_sentiment_score
+    - derivatives_risk_score
+    - liquidity_risk_score
+    - macro_risk_score
+    - overall_risk_score
+    - market_momentum_delta_24h
+    - overall_risk_delta_24h
+    - rolling_avg_overall_risk_24h
+
+    # Step B2 strict-safe subset from B1.5 coverage/parity debug.
+    - quote_volume_lag_1h
+    - quote_volume_24h_lag_1h
+    - volume_zscore_24h_lag_1h
+    - return_4h_lag_1h
+    - return_24h_lag_1h
+    - return_24h_symbol_zscore
+    - return_1h_rolling_mean_4h
+    - return_1h_rolling_mean_24h
+    - rolling_drawdown_24h
+
+training:
+  min_total_rows: 200
+  min_rows_per_split: 20
+  min_classes_per_split: 2
+  fill_numeric_null_with: 0
+  fill_categorical_null_with: UNKNOWN
+  drop_rows_with_null_target: true
+
+prediction:
+  min_feature_completeness_score: 0.50
+  output_signal_rules:
+    high_confidence_threshold: 80
+    medium_confidence_threshold: 60
+
+artifact:
+  storage_mode: local
+  local_dir: artifacts/local_research/microstructure_subset_v1_train/subset9
+  latest_manifest_name: latest_model.json

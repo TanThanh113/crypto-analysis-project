@@ -1,0 +1,2 @@
+-r requirements-dev.txt
+xgboost>=2,<4

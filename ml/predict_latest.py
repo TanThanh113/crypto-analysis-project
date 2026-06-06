@@ -34,6 +34,11 @@ import pandas as pd
 import yaml
 from google.cloud import bigquery, storage
 
+from model_loader import load_model_with_fallback
+
+
+TRUE_VALUES = {"1", "true", "yes", "y", "on"}
+
 
 @dataclass(frozen=True)
 class BigQueryConfig:
@@ -373,9 +378,12 @@ def get_model_classes(bundle: Dict[str, Any]) -> List[str]:
     model = bundle["model"]
 
     try:
-        classes = list(model.named_steps["model"].classes_)
+        if hasattr(model, "named_steps"):
+            classes = list(model.named_steps["model"].classes_)
+        else:
+            classes = list(model.classes_)
     except Exception:
-        classes = list(bundle.get("classes", []))
+        classes = list(bundle.get("classes") or bundle.get("valid_classes", []))
 
     return [str(label).upper() for label in classes]
 
@@ -551,6 +559,14 @@ def write_predictions(
     ).result()
 
 
+def env_bool(name: str, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+
+    return value.strip().lower() in TRUE_VALUES
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Predict latest crypto 4H direction."
@@ -597,6 +613,48 @@ def parse_args() -> argparse.Namespace:
             "GCS folder containing latest_model.json and model artifacts, for example "
             "gs://your-bucket/ml-artifacts/crypto_direction_lgbm_v1"
         ),
+    )
+
+    parser.add_argument(
+        "--model-source",
+        choices=["artifact", "registry", "auto"],
+        default=os.environ.get("ML_PREDICT_MODEL_SOURCE", "artifact"),
+        help=(
+            "Model source for prediction. 'artifact' keeps current behavior, "
+            "'registry' tries MLflow Registry first, 'auto' tries registry only when configured."
+        ),
+    )
+
+    parser.add_argument(
+        "--mlflow-model-uri",
+        default=os.environ.get("MLFLOW_MODEL_URI"),
+        help="Optional explicit MLflow model URI, for example models:/name@champion.",
+    )
+
+    parser.add_argument(
+        "--mlflow-registered-model-name",
+        default=os.environ.get("MLFLOW_REGISTERED_MODEL_NAME"),
+        help="Optional MLflow registered model name for alias-based loading.",
+    )
+
+    parser.add_argument(
+        "--mlflow-model-alias",
+        default=os.environ.get("MLFLOW_MODEL_ALIAS", "champion"),
+        help="MLflow model alias used with --mlflow-registered-model-name.",
+    )
+
+    parser.add_argument(
+        "--registry-fallback-to-artifact",
+        action=argparse.BooleanOptionalAction,
+        default=env_bool("ML_PREDICT_REGISTRY_FALLBACK_TO_ARTIFACT", True),
+        help="Fallback to artifact/latest_model.json when registry load fails.",
+    )
+
+    parser.add_argument(
+        "--registry-strict",
+        action="store_true",
+        default=env_bool("ML_PREDICT_REGISTRY_STRICT", False),
+        help="Fail prediction when registry load fails instead of using artifact fallback.",
     )
 
     return parser.parse_args()
@@ -682,19 +740,48 @@ def main() -> int:
     print(f"[predict] Prediction output: {bq_config.predictions_table_fqn}")
     print(f"[predict] Model config: {model_config.model_name}:{model_config.model_version}")
 
-    print(f"[predict] Loading model artifact from: {artifact_dir}")
-    bundle = load_latest_artifact(
-        artifact_dir=artifact_dir,
-        artifact_path=args.artifact_path,
-        artifact_storage=artifact_storage,
-        artifact_gcs_uri=artifact_gcs_uri,
-        latest_manifest_name=latest_manifest_name,
+    print(f"[predict] Model source: {args.model_source}")
+
+    def artifact_loader() -> Dict[str, Any]:
+        print(f"[predict] Loading model artifact from: {artifact_dir}")
+        return load_latest_artifact(
+            artifact_dir=artifact_dir,
+            artifact_path=args.artifact_path,
+            artifact_storage=artifact_storage,
+            artifact_gcs_uri=artifact_gcs_uri,
+            latest_manifest_name=latest_manifest_name,
+        )
+
+    load_result = load_model_with_fallback(
+        model_source=args.model_source,
+        artifact_loader=artifact_loader,
+        mlflow_model_uri=args.mlflow_model_uri,
+        registered_model_name=args.mlflow_registered_model_name,
+        model_alias=args.mlflow_model_alias,
+        tracking_uri=os.environ.get("MLFLOW_TRACKING_URI"),
+        fallback_to_artifact=args.registry_fallback_to_artifact,
+        strict=args.registry_strict,
+        features=model_config.all_features,
+        model_name=model_config.model_name,
+        model_version=model_config.model_version,
+        target_name=model_config.target_name,
+        valid_classes=model_config.valid_classes,
     )
+    bundle = load_result.bundle
+
+    for reason in load_result.reasons or []:
+        print(f"[predict] {reason}")
 
     print(
-        "[predict] Loaded artifact: "
+        "[predict] Loaded model: "
         f"{bundle.get('model_name')}:{bundle.get('model_version')} "
-        f"({bundle.get('model_key')})"
+        f"({bundle.get('model_key', load_result.source)})"
+    )
+    print(
+        "[predict] Model load details: "
+        f"source={load_result.source}, "
+        f"fallback_used={load_result.fallback_used}, "
+        f"model_uri={load_result.model_uri}"
     )
 
     print("[predict] Reading latest prediction input...")

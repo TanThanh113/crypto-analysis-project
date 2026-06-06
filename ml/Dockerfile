@@ -26,6 +26,14 @@ RUN uv pip install --system -r requirements.txt
 # Copy ML code
 COPY train_model.py ./
 COPY predict_latest.py ./
+COPY mlflow_utils.py ./
+COPY feature_contract.py ./
+COPY strategy_config.py ./
+COPY time_split.py ./
+COPY promotion_gate.py ./
+COPY mlflow_registry.py ./
+COPY model_loader.py ./
+COPY optuna_tuning.py ./
 COPY feature_list.yml ./
 
 # Local artifacts folder.

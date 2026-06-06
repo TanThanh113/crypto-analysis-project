@@ -20,7 +20,14 @@ local_scripts/streaming/logs/
 
 # ML local artifacts
 ml/artifacts/
+ml/artifacts/local_research/
+ml/artifacts/model_zoo_local/
+mlruns/
+*.db
+*.sqlite
+*.sqlite3
 *.joblib
+.pytest_cache/
 
 # Secrets and credentials
 .env
@@ -121,4 +128,4 @@ local_scripts/batch/backfill/**/*.jsonl
 # Except for Kafka Connect files
 !local_scripts/streaming/scripts/bq_alerts_sink.json
 !local_scripts/streaming/scripts/bq_candlestick_sink.json
-!local_scripts/streaming/scripts/bq_sentiment_sink.json
+!local_scripts/streaming/scripts/bq_sentiment_sink.jsonml/.venv/
