@@ -161,6 +161,32 @@ def main() -> int:
     flow_dir = pathlib.Path(os.environ["KESTRA_FLOW_DIR"])
     enable_ml_deploy = env_bool("ENABLE_ML_KESTRA_DEPLOY", default=False)
 
+    files = sorted(flow_dir.rglob("*.yml")) + sorted(flow_dir.rglob("*.yaml"))
+
+    if not files:
+        print(f"No flow files found in {flow_dir}")
+        print("No deployable Kestra flows; skipping Kestra server port-forward")
+        return 0
+
+    ml_files = [path for path in files if is_ml_flow(path, flow_dir)]
+    non_ml_files = [path for path in files if not is_ml_flow(path, flow_dir)]
+    ml_deployable_count = len(ml_files) if enable_ml_deploy else 0
+    total_deployable_count = len(non_ml_files) + ml_deployable_count
+
+    print(f"Detected non-ML Kestra flows to deploy: {len(non_ml_files)}")
+    print(f"Detected ML Kestra flows: {len(ml_files)}")
+
+    if not enable_ml_deploy:
+        print("ENABLE_ML_KESTRA_DEPLOY=false; ML flows will be skipped")
+
+    print(f"ML skipped count: {len(ml_files) - ml_deployable_count}")
+    print(f"ML deployable count: {ml_deployable_count}")
+    print(f"Total deployable count: {total_deployable_count}")
+
+    if total_deployable_count == 0:
+        print("No deployable Kestra flows; skipping Kestra server port-forward")
+        return 0
+
     username = os.environ["KESTRA_USERNAME"]
     password = os.environ["KESTRA_PASSWORD"]
 
@@ -173,30 +199,20 @@ def main() -> int:
         "Content-Type": "application/x-yaml",
     }
 
-    files = sorted(flow_dir.rglob("*.yml")) + sorted(flow_dir.rglob("*.yaml"))
-
-    if not files:
-        print(f"No flow files found in {flow_dir}")
-        return 1
-
-    ml_files = [path for path in files if is_ml_flow(path, flow_dir)]
-    non_ml_files = [path for path in files if not is_ml_flow(path, flow_dir)]
-
-    print("Deploying batch/dbt Kestra flows")
-    print(f"Non-ML flow file count: {len(non_ml_files)}")
-
-    failed = deploy_files(
-        files=non_ml_files,
-        kestra_server=kestra_server,
-        tenant=tenant,
-        headers=headers,
-    )
+    print("Deploying batch/dbt/non-ML Kestra flows")
+    failed = 0
+    if non_ml_files:
+        failed = deploy_files(
+            files=non_ml_files,
+            kestra_server=kestra_server,
+            tenant=tenant,
+            headers=headers,
+        )
 
     deployed_count = len(non_ml_files)
 
     if enable_ml_deploy:
         print("Deploying ML Kestra flows because ENABLE_ML_KESTRA_DEPLOY=true")
-        print(f"ML flow file count: {len(ml_files)}")
         failed += deploy_files(
             files=ml_files,
             kestra_server=kestra_server,
