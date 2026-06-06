@@ -18,6 +18,7 @@ on:
       - "dbt_transform/**"
       - "ml/**"
       - "docker/**"
+      - "kestra/flows-gke/**"
       - ".github/workflows/docker-build-push.yml"
   workflow_dispatch:
 
@@ -26,6 +27,7 @@ env:
   REGION: asia-southeast1
   ARTIFACT_REPO: crypto-docker
   IMAGE_BASE: asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker
+  ENABLE_ML_KESTRA_DEPLOY: ${{ vars.ENABLE_ML_KESTRA_DEPLOY || 'false' }}
 
 jobs:
   build-and-push:
@@ -45,6 +47,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Check for changed paths
         uses: dorny/paths-filter@v3
@@ -63,6 +67,41 @@ jobs:
               - 'ml/**'
               - 'docker/ml.Dockerfile'
               - '.github/workflows/docker-build-push.yml'
+
+      - name: Compute Docker build plan
+        id: docker_plan
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CHANGED_FILES_PATH="${RUNNER_TEMP}/docker_changed_files.txt"
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags --depth=1 origin \
+              "${{ github.event.pull_request.base.sha }}" \
+              "${{ github.event.pull_request.head.sha }}" \
+              || true
+
+            git diff --name-only \
+              "${{ github.event.pull_request.base.sha }}" \
+              "${{ github.event.pull_request.head.sha }}" \
+              > "${CHANGED_FILES_PATH}"
+          else
+            : > "${CHANGED_FILES_PATH}"
+          fi
+
+          ENABLE_ML_DEPLOY="${ENABLE_ML_KESTRA_DEPLOY:-false}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            ENABLE_ML_DEPLOY="false"
+          fi
+          ENABLE_ML_DEPLOY="$(printf '%s' "${ENABLE_ML_DEPLOY}" | tr '[:upper:]' '[:lower:]')"
+
+          python .github/scripts/kestra_deploy_plan.py \
+            --event-name "${{ github.event_name }}" \
+            --enable-ml-kestra-deploy "${ENABLE_ML_DEPLOY}" \
+            --changed-files "${CHANGED_FILES_PATH}" \
+            --flow-root "kestra/flows-gke" \
+            --github-output "${GITHUB_OUTPUT}"
 
       - name: Compute image tag
         id: meta
@@ -83,24 +122,32 @@ jobs:
           echo "PUSH_LATEST=${PUSH_LATEST}"
 
       - name: Authenticate to Google Cloud
+        if: steps.docker_plan.outputs.should_build_docker == 'true'
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_CICD_SERVICE_ACCOUNT }}
 
       - name: Set up gcloud
+        if: steps.docker_plan.outputs.should_build_docker == 'true'
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker for Artifact Registry
+        if: steps.docker_plan.outputs.should_build_docker == 'true'
         run: |
           gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+
+      - name: Skip Docker build
+        if: steps.docker_plan.outputs.should_build_docker != 'true'
+        run: |
+          echo "Skipping Docker build: no Docker/runtime changes and no deployable Kestra flows."
 
       # On PR, build all 3 images so the Kestra PR test flows can use the same image_tag.
       # On main, only build changed components.
 
       # --- BATCH COMPONENT ---
       - name: Build batch image
-        if: github.event_name == 'pull_request' || steps.filter.outputs.batch == 'true'
+        if: (github.event_name == 'pull_request' && steps.docker_plan.outputs.should_build_docker == 'true') || (github.event_name != 'pull_request' && steps.filter.outputs.batch == 'true')
         run: |
           docker build \
             -t ${IMAGE_BASE}/crypto-batch:${{ steps.meta.outputs.image_tag }} \
@@ -108,12 +155,12 @@ jobs:
             local_scripts
 
       - name: Smoke test batch image
-        if: github.event_name == 'pull_request' || steps.filter.outputs.batch == 'true'
+        if: (github.event_name == 'pull_request' && steps.docker_plan.outputs.should_build_docker == 'true') || (github.event_name != 'pull_request' && steps.filter.outputs.batch == 'true')
         run: |
           docker run --rm ${IMAGE_BASE}/crypto-batch:${{ steps.meta.outputs.image_tag }} python --version
 
       - name: Push batch image
-        if: github.event_name == 'pull_request' || steps.filter.outputs.batch == 'true'
+        if: (github.event_name == 'pull_request' && steps.docker_plan.outputs.should_build_docker == 'true') || (github.event_name != 'pull_request' && steps.filter.outputs.batch == 'true')
         run: |
           docker push ${IMAGE_BASE}/crypto-batch:${{ steps.meta.outputs.image_tag }}
 
@@ -125,7 +172,7 @@ jobs:
 
       # --- DBT COMPONENT ---
       - name: Build dbt image
-        if: github.event_name == 'pull_request' || steps.filter.outputs.dbt == 'true'
+        if: (github.event_name == 'pull_request' && steps.docker_plan.outputs.should_build_docker == 'true') || (github.event_name != 'pull_request' && steps.filter.outputs.dbt == 'true')
         run: |
           docker build \
             -t ${IMAGE_BASE}/crypto-dbt:${{ steps.meta.outputs.image_tag }} \
@@ -133,12 +180,12 @@ jobs:
             dbt_transform
 
       - name: Smoke test dbt image
-        if: github.event_name == 'pull_request' || steps.filter.outputs.dbt == 'true'
+        if: (github.event_name == 'pull_request' && steps.docker_plan.outputs.should_build_docker == 'true') || (github.event_name != 'pull_request' && steps.filter.outputs.dbt == 'true')
         run: |
           docker run --rm ${IMAGE_BASE}/crypto-dbt:${{ steps.meta.outputs.image_tag }} uv run dbt --version
 
       - name: Push dbt image
-        if: github.event_name == 'pull_request' || steps.filter.outputs.dbt == 'true'
+        if: (github.event_name == 'pull_request' && steps.docker_plan.outputs.should_build_docker == 'true') || (github.event_name != 'pull_request' && steps.filter.outputs.dbt == 'true')
         run: |
           docker push ${IMAGE_BASE}/crypto-dbt:${{ steps.meta.outputs.image_tag }}
 
@@ -150,7 +197,7 @@ jobs:
 
       # --- ML COMPONENT ---
       - name: Build ML image
-        if: github.event_name == 'pull_request' || steps.filter.outputs.ml == 'true'
+        if: (github.event_name == 'pull_request' && steps.docker_plan.outputs.should_build_docker == 'true') || (github.event_name != 'pull_request' && steps.filter.outputs.ml == 'true')
         run: |
           docker build \
             -t ${IMAGE_BASE}/crypto-ml:${{ steps.meta.outputs.image_tag }} \
@@ -158,12 +205,12 @@ jobs:
             ml
 
       - name: Smoke test ML image
-        if: github.event_name == 'pull_request' || steps.filter.outputs.ml == 'true'
+        if: (github.event_name == 'pull_request' && steps.docker_plan.outputs.should_build_docker == 'true') || (github.event_name != 'pull_request' && steps.filter.outputs.ml == 'true')
         run: |
           docker run --rm ${IMAGE_BASE}/crypto-ml:${{ steps.meta.outputs.image_tag }} python --version
 
       - name: Push ML image
-        if: github.event_name == 'pull_request' || steps.filter.outputs.ml == 'true'
+        if: (github.event_name == 'pull_request' && steps.docker_plan.outputs.should_build_docker == 'true') || (github.event_name != 'pull_request' && steps.filter.outputs.ml == 'true')
         run: |
           docker push ${IMAGE_BASE}/crypto-ml:${{ steps.meta.outputs.image_tag }}
 
@@ -174,7 +221,7 @@ jobs:
           docker push ${IMAGE_BASE}/crypto-ml:latest
 
       - name: Comment PR preview image tag
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.docker_plan.outputs.should_build_docker == 'true'
         uses: actions/github-script@v8
         with:
           script: |
