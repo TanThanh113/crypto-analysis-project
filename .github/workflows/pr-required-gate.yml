@@ -38,7 +38,8 @@ jobs:
               - 'docker/**'
               - '.github/workflows/docker-build-push.yml'
             kestra_required:
-              - 'kestra/flows-gke/**'
+              - 'kestra/flows-gke/**/*.yml'
+              - 'kestra/flows-gke/**/*.yaml'
               - '!kestra/flows-gke/ml/**'
             dbt_required:
               - 'dbt_transform/**'

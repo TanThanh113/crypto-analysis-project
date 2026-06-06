@@ -54,6 +54,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Check for changed paths
         uses: dorny/paths-filter@v3
@@ -92,6 +94,38 @@ jobs:
             FLOW_DIR="./kestra/flows-gke"
           fi
 
+          echo "deploy_mode=${DEPLOY_MODE}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "flow_namespace=${FLOW_NAMESPACE}" >> "$GITHUB_OUTPUT"
+          echo "flow_dir=${FLOW_DIR}" >> "$GITHUB_OUTPUT"
+
+          echo "DEPLOY_MODE=${DEPLOY_MODE}"
+          echo "IMAGE_TAG=${IMAGE_TAG}"
+          echo "FLOW_NAMESPACE=${FLOW_NAMESPACE}"
+          echo "FLOW_DIR=${FLOW_DIR}"
+
+      - name: Compute Kestra deploy plan
+        id: deploy_plan
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CHANGED_FILES_PATH="${RUNNER_TEMP}/kestra_changed_files.txt"
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags --depth=1 origin \
+              "${{ github.event.pull_request.base.sha }}" \
+              "${{ github.event.pull_request.head.sha }}" \
+              || true
+
+            git diff --name-only \
+              "${{ github.event.pull_request.base.sha }}" \
+              "${{ github.event.pull_request.head.sha }}" \
+              > "${CHANGED_FILES_PATH}"
+          else
+            : > "${CHANGED_FILES_PATH}"
+          fi
+
           ENABLE_ML_DEPLOY="${ENABLE_ML_KESTRA_DEPLOY:-false}"
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             ENABLE_ML_DEPLOY="false"
@@ -100,62 +134,26 @@ jobs:
           fi
           ENABLE_ML_DEPLOY="$(printf '%s' "${ENABLE_ML_DEPLOY}" | tr '[:upper:]' '[:lower:]')"
 
-          HAS_NON_ML_FLOWS_TO_DEPLOY="${{ steps.filter.outputs.kestra_non_ml_flows }}"
-          HAS_ML_FLOWS_TO_DEPLOY="${{ steps.filter.outputs.kestra_ml_flows }}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            HAS_NON_ML_FLOWS_TO_DEPLOY="true"
-            HAS_ML_FLOWS_TO_DEPLOY="true"
-          fi
-
-          SHOULD_DEPLOY_ML_FLOWS="false"
-          if [ "${HAS_ML_FLOWS_TO_DEPLOY}" = "true" ] && [ "${ENABLE_ML_DEPLOY}" = "true" ]; then
-            SHOULD_DEPLOY_ML_FLOWS="true"
-          fi
-
-          HAS_ANY_FLOWS_TO_DEPLOY="false"
-          if [ "${HAS_NON_ML_FLOWS_TO_DEPLOY}" = "true" ] || [ "${SHOULD_DEPLOY_ML_FLOWS}" = "true" ]; then
-            HAS_ANY_FLOWS_TO_DEPLOY="true"
-          fi
-
-          echo "deploy_mode=${DEPLOY_MODE}" >> "$GITHUB_OUTPUT"
-          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
-          echo "flow_namespace=${FLOW_NAMESPACE}" >> "$GITHUB_OUTPUT"
-          echo "flow_dir=${FLOW_DIR}" >> "$GITHUB_OUTPUT"
-          echo "enable_ml_kestra_deploy=${ENABLE_ML_DEPLOY}" >> "$GITHUB_OUTPUT"
-          echo "has_non_ml_flows_to_deploy=${HAS_NON_ML_FLOWS_TO_DEPLOY}" >> "$GITHUB_OUTPUT"
-          echo "has_ml_flows_to_deploy=${HAS_ML_FLOWS_TO_DEPLOY}" >> "$GITHUB_OUTPUT"
-          echo "should_deploy_ml_flows=${SHOULD_DEPLOY_ML_FLOWS}" >> "$GITHUB_OUTPUT"
-          echo "has_any_flows_to_deploy=${HAS_ANY_FLOWS_TO_DEPLOY}" >> "$GITHUB_OUTPUT"
-
-          echo "DEPLOY_MODE=${DEPLOY_MODE}"
-          echo "IMAGE_TAG=${IMAGE_TAG}"
-          echo "FLOW_NAMESPACE=${FLOW_NAMESPACE}"
-          echo "FLOW_DIR=${FLOW_DIR}"
-          echo "ENABLE_ML_KESTRA_DEPLOY=${ENABLE_ML_DEPLOY}"
-          echo "Detected non-ML Kestra flows to deploy: ${HAS_NON_ML_FLOWS_TO_DEPLOY}"
-          echo "Detected ML Kestra flows: ${HAS_ML_FLOWS_TO_DEPLOY}"
-          if [ "${ENABLE_ML_DEPLOY}" != "true" ]; then
-            echo "ENABLE_ML_KESTRA_DEPLOY=false; ML flows will be skipped"
-          fi
-          echo "SHOULD_DEPLOY_ML_FLOWS=${SHOULD_DEPLOY_ML_FLOWS}"
-          echo "HAS_ANY_FLOWS_TO_DEPLOY=${HAS_ANY_FLOWS_TO_DEPLOY}"
-          if [ "${HAS_ANY_FLOWS_TO_DEPLOY}" != "true" ]; then
-            echo "No deployable Kestra flows after ML deploy gating; skipping Kestra port-forward/deploy."
-          fi
+          python .github/scripts/kestra_deploy_plan.py \
+            --event-name "${{ github.event_name }}" \
+            --enable-ml-kestra-deploy "${ENABLE_ML_DEPLOY}" \
+            --changed-files "${CHANGED_FILES_PATH}" \
+            --flow-root "kestra/flows-gke" \
+            --github-output "${GITHUB_OUTPUT}"
 
       - name: Authenticate to Google Cloud
-        if: steps.meta.outputs.has_any_flows_to_deploy == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.filter.outputs.helm_infra == 'true')
+        if: steps.deploy_plan.outputs.has_any_flows_to_deploy == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.filter.outputs.helm_infra == 'true')
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_CICD_SERVICE_ACCOUNT }}
 
       - name: Set up gcloud
-        if: steps.meta.outputs.has_any_flows_to_deploy == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.filter.outputs.helm_infra == 'true')
+        if: steps.deploy_plan.outputs.has_any_flows_to_deploy == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.filter.outputs.helm_infra == 'true')
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Get GKE credentials
-        if: steps.meta.outputs.has_any_flows_to_deploy == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.filter.outputs.helm_infra == 'true')
+        if: steps.deploy_plan.outputs.has_any_flows_to_deploy == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.filter.outputs.helm_infra == 'true')
         uses: google-github-actions/get-gke-credentials@v2
         with:
           project_id: ${{ env.PROJECT_ID }}
@@ -199,7 +197,7 @@ jobs:
       # This copies kestra/flows-gke to /tmp, rewrites namespace to crypto.preview.pr_N,
       # removes top-level triggers, and swaps Artifact Registry :latest images to :pr-N.
       - name: Generate PR preview Kestra flows
-        if: github.event_name == 'pull_request' && steps.meta.outputs.has_any_flows_to_deploy == 'true'
+        if: github.event_name == 'pull_request' && steps.deploy_plan.outputs.has_any_flows_to_deploy == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -219,7 +217,7 @@ jobs:
           preview_namespace = "${{ steps.meta.outputs.flow_namespace }}"
           prod_namespace = os.environ["PROD_FLOW_NAMESPACE"]
           image_tag = "${{ steps.meta.outputs.image_tag }}"
-          enable_ml_deploy = "${{ steps.meta.outputs.enable_ml_kestra_deploy }}" == "true"
+          enable_ml_deploy = "${{ steps.deploy_plan.outputs.should_deploy_ml_flows }}" == "true"
 
           if target_root.exists():
               shutil.rmtree(target_root)
@@ -341,13 +339,13 @@ jobs:
           PY
 
       - name: Skip Kestra server port-forward and flow deploy
-        if: steps.meta.outputs.has_any_flows_to_deploy != 'true'
+        if: steps.deploy_plan.outputs.has_any_flows_to_deploy != 'true'
         run: |
           echo "No deployable Kestra flows; skipping Kestra server port-forward"
           echo "No deployable Kestra flows after ML deploy gating; skipping Kestra port-forward/deploy."
 
       - name: Port-forward Kestra webserver
-        if: steps.meta.outputs.has_any_flows_to_deploy == 'true'
+        if: steps.deploy_plan.outputs.has_any_flows_to_deploy == 'true'
         run: |
           kubectl port-forward deployment/kestra-webserver 8080:8080 -n ${KESTRA_NAMESPACE} > /tmp/kestra-port-forward.log 2>&1 &
           echo $! > /tmp/kestra-port-forward.pid
@@ -366,21 +364,21 @@ jobs:
           exit 1
 
       - name: Check Kestra webserver authentication
-        if: steps.meta.outputs.has_any_flows_to_deploy == 'true'
+        if: steps.deploy_plan.outputs.has_any_flows_to_deploy == 'true'
         run: |
           curl -fsS \
             -u "${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}:${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}" \
             ${KESTRA_SERVER}/ > /dev/null
 
       - name: Deploy Kestra flows through REST API
-        if: steps.meta.outputs.has_any_flows_to_deploy == 'true'
+        if: steps.deploy_plan.outputs.has_any_flows_to_deploy == 'true'
         shell: bash
         env:
           KESTRA_USERNAME: ${{ secrets.KESTRA_BASIC_AUTH_USERNAME }}
           KESTRA_PASSWORD: ${{ secrets.KESTRA_BASIC_AUTH_PASSWORD }}
           KESTRA_TENANT: main
           KESTRA_FLOW_DIR: ${{ steps.meta.outputs.flow_dir }}
-          ENABLE_ML_KESTRA_DEPLOY: ${{ steps.meta.outputs.enable_ml_kestra_deploy }}
+          ENABLE_ML_KESTRA_DEPLOY: ${{ steps.deploy_plan.outputs.should_deploy_ml_flows }}
         run: |
           set -euo pipefail
 
