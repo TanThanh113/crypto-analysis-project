@@ -1,3 +1,10 @@
+"""Time-series split utilities used to avoid leakage in ML research/training.
+
+These helpers validate that train, validation, and test windows are ordered in
+time and optionally restrict train rows to rolling windows. They do not shuffle
+time-series rows and are intended to keep model evaluation honest.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -46,6 +53,11 @@ def validate_time_split_order(
     split_column: str,
     timestamp_column: str = "hour_ts",
 ) -> TimeSplitBounds:
+    """Validate train, validation, and optional test split chronology.
+
+    Raises ValueError when train rows overlap or follow validation rows. This is
+    the main anti-leakage guard for time-series evaluation.
+    """
     train_ts = _timestamps_for_split(
         df,
         split_column=split_column,
@@ -106,6 +118,7 @@ def select_rolling_training_window(
     train_window_days: int,
     timestamp_column: str = "hour_ts",
 ) -> pd.DataFrame:
+    """Keep validation/test rows and restrict train rows to a rolling window."""
     if train_window_days <= 0:
         raise ValueError("train_window_days must be positive")
 
@@ -138,6 +151,7 @@ def apply_train_window(
     train_window_days: int | None,
     timestamp_column: str = "hour_ts",
 ) -> pd.DataFrame:
+    """Apply all-history or rolling-window strategy behavior to a dataframe."""
     if train_window_days is None:
         validate_time_split_order(
             df,

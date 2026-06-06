@@ -14,6 +14,11 @@ Important:
 - This script uses only feature columns declared in feature_list.yml.
 - It does not use future_* columns as features.
 - model_name and model_version should match dim_ml_model_registry.
+- --dry-run skips BigQuery metric writes.
+- MLflow logging, Optuna tuning, and Registry updates are optional and must be
+  explicitly enabled.
+- Promotion gate output is recorded for auditability before any optional
+  Registry update is attempted.
 """
 
 from __future__ import annotations
@@ -122,7 +127,7 @@ class ModelConfig:
         return self.categorical_features + self.numeric_features
 
 # Contains the training configuration(min_total_rows, min_rows_per_split, min_classes_per_split, etc.)
-@dataclass(frozen=True) 
+@dataclass(frozen=True)
 class TrainingConfig:
     min_total_rows: int
     min_rows_per_split: int
@@ -191,6 +196,9 @@ def load_yaml(path: Path) -> Dict[str, Any]:
     return data
 
 # Build the BigQuery, Model, and Training configurations from the feature_list.yml file.
+
+# Note: It also has a Fallback feature: If the configuration file is missing information, it will automatically
+# retrieve predefined default values ​​or search within the system's Environment Variables.
 def build_configs(config: Dict[str, Any]) -> Tuple[BigQueryConfig, ModelConfig, TrainingConfig]:
     bq = config.get("bigquery", {}) # Get the BigQuery configuration from the feature_list.yml file.
     model = config.get("model", {}) # Get the Model configuration from the feature_list.yml file.
@@ -263,11 +271,11 @@ def query_training_data(client: bigquery.Client, bq_config: BigQueryConfig, mode
         model_config.target_name,
     ]
 
-    # Deduplicate the columns
+    # Deduplicate the columns and join the base columns with the model's features
     columns = list(dict.fromkeys(base_columns + model_config.all_features))
+
     # Build the SQL query
     select_expr = ",\n        ".join([f"`{column}`" for column in columns])
-
     query = f"""
     SELECT
         {select_expr}
@@ -292,7 +300,7 @@ def query_training_data(client: bigquery.Client, bq_config: BigQueryConfig, mode
     # Execute the query(BigQuery) and return the result as a pandas DataFrame
     return client.query(query, job_config=job_config).to_dataframe()
 
-# Check the quality of the data
+# Check the quality of the data(Data Validator)
 def validate_training_data(df: pd.DataFrame, model_config: ModelConfig, training_config: TrainingConfig,) -> None:
 
     # Check if the required columns are present
@@ -324,7 +332,7 @@ def validate_training_data(df: pd.DataFrame, model_config: ModelConfig, training
             f"Need at least {training_config.min_total_rows} rows."
         )
 
-    # Check the number of lines in each set.
+    # Check the number of rows in each dataset before feeding it into Machine Learning.
     split_counts = df[model_config.split_column].value_counts().to_dict()
     for split_name in ["train", "validation", "test"]:
         count = split_counts.get(split_name, 0)
@@ -344,6 +352,7 @@ def validate_training_data(df: pd.DataFrame, model_config: ModelConfig, training
             "Need more historical data."
         )
 
+    # Check that the labels in the target column are complete to avoid incorrect data.
     for split_name in ["train", "validation", "test"]:
         # Check the number of classes
         split_target = (
@@ -352,7 +361,7 @@ def validate_training_data(df: pd.DataFrame, model_config: ModelConfig, training
             .str.upper()
         )
         split_classes = split_target.nunique()
-        
+
         # If the number of classes is less than the minimum, raise an error.
         if split_classes < training_config.min_classes_per_split:
             raise ValueError(
@@ -392,12 +401,12 @@ def make_one_hot_encoder() -> OneHotEncoder:
     except TypeError:
         return OneHotEncoder(handle_unknown="ignore", sparse=False)
 
-
+# Preprocessing is done automatically using ColumnTransformer and Pipeline from the Scikit-Learn library.(Data Preprocessing)
 def make_preprocessor(model_config: ModelConfig, scale_numeric: bool) -> ColumnTransformer:
     numeric_steps = [("imputer", SimpleImputer(strategy="median"))]
     if scale_numeric:
         # Imputer: Fill in the blank cells (NaN) with the median value of that column.
-        # Scaler: Scale the values to have a mean of 0 and a standard deviation of 1.
+        # Scaler: Adjusts the values ​​to a range between 0 and 1.
         numeric_steps.append(("scaler", StandardScaler()))
 
     numeric_pipeline = Pipeline(steps=numeric_steps)
@@ -429,7 +438,7 @@ def build_models(model_config: ModelConfig) -> Dict[str, Pipeline]:
                 LogisticRegression(
                     max_iter=2000, # Increase the maximum number of iterations to ensure the model has enough time to find the optimal point (convergence).
                     class_weight="balanced", # Automatically adjust weights if the data is unbalanced.
-                    solver="lbfgs", # Optimization algorithm
+                    solver="lbfgs", # Optimization algorithm L-BFGS (Limited-memory Broyden–Fletcher–Goldfarb–Shanno).
                     random_state=model_config.random_state, # This helps to fix the results after each code run.
                     n_jobs=-1, # Utilizing all of the computer's CPU cores for parallel computing helps it run faster.
                 ),
@@ -472,7 +481,7 @@ def build_models(model_config: ModelConfig) -> Dict[str, Pipeline]:
         "lightgbm_classifier": lightgbm,
     }
 
-
+# Filter the models based on the model choice.
 def filter_models_for_choice(
     models: Dict[str, Pipeline],
     model_choice: str,
@@ -483,8 +492,9 @@ def filter_models_for_choice(
     model_key = MODEL_KEY_BY_CHOICE[model_choice]
     return {model_key: models[model_key]}
 
-
+# Strategic navigation
 def resolve_requested_strategies(args: argparse.Namespace) -> List[TrainingStrategy]:
+    # There cannot be two columns at the same time.
     if args.strategy and args.strategy_matrix:
         raise ValueError("Use either --strategy or --strategy-matrix, not both.")
 
@@ -582,7 +592,7 @@ def safe_log_loss(y_true: pd.Series, proba: Optional[np.ndarray], classes: Itera
         return None
 
 # Calculate the Brier Score.
-# Practical purpose: Similar to Log Loss, Brier score is used to measure the "deviation" between the model's predicted probability 
+# Practical purpose: Similar to Log Loss, Brier score is used to measure the "deviation" between the model's predicted probability
 # and the actual probability, but using the squared distance formula.
 def brier_multiclass(y_true: pd.Series, proba: Optional[np.ndarray], classes: Iterable[str]) -> Optional[float]:
     if proba is None:
@@ -595,7 +605,7 @@ def brier_multiclass(y_true: pd.Series, proba: Optional[np.ndarray], classes: It
         y_onehot = np.zeros_like(proba, dtype=float)
         class_index = {label: idx for idx, label in enumerate(classes_list)}
 
-        # Iterate through each row of actual data. Whatever label a row has, set the 
+        # Iterate through each row of actual data. Whatever label a row has, set the
         # corresponding column to 1.0. This is called the absolute answer matrix.
         for row_idx, label in enumerate(y_true):
             if label in class_index:
@@ -617,12 +627,14 @@ def evaluate_model(model: Pipeline, x: pd.DataFrame, y: pd.Series) -> Dict[str, 
     proba = safe_predict_proba(model, x)
 
     # precision_recall_fscore_support(...): Calculates the traditional triple-metric set based on the correct/incorrect prediction label:
+    # Take the overall score
     precision, recall, f1, _ = precision_recall_fscore_support(
         y,
         pred,
         average="macro",
         zero_division=0,
     )
+    # Take the per-class score
     _, per_class_recall, _, _ = precision_recall_fscore_support(
         y,
         pred,
@@ -637,9 +649,11 @@ def evaluate_model(model: Pipeline, x: pd.DataFrame, y: pd.Series) -> Dict[str, 
         "accuracy": float(accuracy_score(y, pred)),
         "precision_macro": float(precision),
         "recall_macro": float(recall),
-        "per_class_recall_min": float(np.min(per_class_recall)) if len(per_class_recall) else None,
+        "per_class_recall_min": float(np.min(per_class_recall)) if len(per_class_recall) else None, # take the lowest score
         "f1_macro": float(f1),
         "auc_ovr": safe_auc(y, proba, classes),
+
+        # two penalty indicators
         "log_loss": safe_log_loss(y, proba, classes),
         "brier_score": brier_multiclass(y, proba, classes),
     }
@@ -654,6 +668,7 @@ def model_metadata(model_key: str) -> Tuple[str, str, str]:
     if strategy is not None:
         return model_metadata(strategy.base_model_key)
 
+    # (Model family, Specific algorithm, Problem type).
     if model_key == "logistic_regression_baseline":
         return "linear_baseline", "logistic_regression", "classification"
 
@@ -662,7 +677,7 @@ def model_metadata(model_key: str) -> Tuple[str, str, str]:
 
     return "unknown", model_key, "classification"
 
-# Choose the best model
+# Choose the best model(based on the primary metric)
 def choose_best_model(results: Dict[str, Dict[str, Any]], primary_metric: str) -> str:
     scored: List[Tuple[float, str]] = []
 
@@ -671,7 +686,7 @@ def choose_best_model(results: Dict[str, Dict[str, Any]], primary_metric: str) -
         validation_metric = result["metrics"]["validation"].get(primary_metric)
 
         if validation_metric is None or pd.isna(validation_metric):
-            validation_metric = -1.0
+            validation_metric = -1.0 # If the validation metric is missing, it will be -1.0.
 
         # Tie-breaker for LightGBM models.
         _, algorithm, _ = model_metadata(model_key)
@@ -727,9 +742,11 @@ def save_bundle(
     if strategy is not None:
         bundle.update(strategy.metadata())
 
+    # Save the results of finding the hyperparameters of Optina.
     if optuna_result is not None and optuna_result.enabled:
         bundle["optuna"] = optuna_result.to_dict()
 
+    # Save the model artifact to the artifact directory.
     artifact_path = artifact_dir / (
         f"{model_config.model_name}__{model_key}__{artifact_version}.joblib"
     )
@@ -777,11 +794,13 @@ def save_latest_manifest(
 
     return manifest_path
 
-
+# Load the local champion metrics from the artifact directory.
 def load_local_champion_metrics(
     artifact_dir: Path,
     manifest_name: str,
 ) -> Optional[Dict[str, Any]]:
+
+    # check if the manifest file exists(latest model.json: file containing the best model)
     manifest_path = artifact_dir / manifest_name
     if not manifest_path.exists():
         return None
@@ -790,10 +809,13 @@ def load_local_champion_metrics(
         with manifest_path.open("r", encoding="utf-8") as f:
             manifest = json.load(f)
 
+        # check if the artifact path is valid(artifact_path or local_artifact_path)
         artifact_path = manifest.get("artifact_path") or manifest.get("local_artifact_path")
+        # check if the artifact path is a valid GCS path
         if not artifact_path or is_gcs_uri(str(artifact_path)):
             return None
 
+        # check .joblib file exists in the artifact path
         local_artifact_path = Path(str(artifact_path)).expanduser().resolve()
         if not local_artifact_path.exists():
             return None
@@ -808,25 +830,28 @@ def load_local_champion_metrics(
 
     return None
 
-
+# Build the promotion gate config from the config file.
 def build_promotion_gate_config(
     config: Dict[str, Any],
     training_config: TrainingConfig,
 ) -> PromotionGateConfig:
     promotion = config.get("promotion", {})
 
+    # Get the promotion margin from the config.
     def float_setting(name: str, env_name: str, default: float) -> float:
         env_value = os.environ.get(env_name)
         if env_value is not None:
             return float(env_value)
         return float(promotion.get(name, default))
 
+    # Get the promotion max_test_f1_degradation from the config.
     def int_setting(name: str, env_name: str, default: int) -> int:
         env_value = os.environ.get(env_name)
         if env_value is not None:
             return int(env_value)
         return int(promotion.get(name, default))
 
+    # The "promotion rules" of the model are comparable to those of the champion model.
     return PromotionGateConfig(
         margin=float_setting("margin", "ML_PROMOTION_MARGIN", 0.0),
         max_test_f1_degradation=float_setting(
@@ -856,56 +881,63 @@ def build_promotion_gate_config(
         ),
     )
 
-
+# Check if the promotion gate fails on reject.(CI/CD)
 def promotion_fail_on_reject(config: Dict[str, Any]) -> bool:
     env_value = os.environ.get("ML_PROMOTION_FAIL_ON_REJECT")
     if env_value is not None:
         return env_value.strip().lower() in TRUE_VALUES
 
+    # Get the promotion fail_on_reject value from the config.
     promotion = config.get("promotion", {})
     return bool(promotion.get("fail_on_reject", False))
 
-
+# Save the promotion gate result artifact.
 def save_promotion_gate_artifact(
     artifact_dir: Path,
     run_id: str,
     promotion_result: PromotionGateResult,
 ) -> Path:
-    artifact_dir.mkdir(parents=True, exist_ok=True)
+    artifact_dir.mkdir(parents=True, exist_ok=True)  # Create the artifact directory if it doesn't exist.
     promotion_path = artifact_dir / f"promotion_gate_{run_id}.json"
 
+    # Save the promotion result to the artifact directory -> artifact_dir/promotion_gate_<run_id>.json
     with promotion_path.open("w", encoding="utf-8") as f:
         json.dump(promotion_result.to_dict(), f, indent=2, default=str)
 
     return promotion_path
 
-
+# Update the latest model manifest with the registry result(MLflow Registry).
 def update_manifest_with_registry_result(
     manifest_path: Path,
     registry_result: MLflowRegistryResult,
 ) -> None:
+
+    # Check if the manifest file exists(latest model.json: file containing the best model)
     if not manifest_path.exists():
         return
 
+    # Load the manifest file
     with manifest_path.open("r", encoding="utf-8") as f:
         manifest = json.load(f)
 
+    # Update the manifest with the registry result(MLflow Registry)
     manifest.update(
         {
             "registry_status": registry_result.status,
             "registry_reasons": registry_result.reasons or [],
             "mlflow_registered_model_name": registry_result.registered_model_name,
-            "mlflow_model_version": registry_result.model_version,
-            "mlflow_model_alias": registry_result.model_alias,
-            "mlflow_model_uri": registry_result.model_uri,
-            "mlflow_registry_run_id": registry_result.run_id,
+            "mlflow_model_version": registry_result.model_version, # The model version is the same as the model version in the manifest.
+            "mlflow_model_alias": registry_result.model_alias, # The model alias is the same as the model alias in the manifest.
+            "mlflow_model_uri": registry_result.model_uri, # The model URI is the same as the model URI in the manifest.
+            "mlflow_registry_run_id": registry_result.run_id, # The registry run ID is the same as the run ID in the manifest.
         }
     )
 
+    # Save the updated manifest to the artifact directory -> artifact_dir/latest_model.json
     with manifest_path.open("w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, default=str)
 
-
+# Get the metric value from the metrics dictionary(e.g., f1_macro). Create a separate one to avoid dependence.
 def _metric_value(
     metrics: Dict[str, Any],
     split_name: str,
@@ -929,7 +961,7 @@ def _metric_value(
 
     return metric_value
 
-
+# Build the registry tags for MLflow Model Registry.
 def build_registry_tags(
     *,
     config_path: Path,
@@ -940,23 +972,29 @@ def build_registry_tags(
     best_model_key: str,
     promotion_result: PromotionGateResult,
 ) -> Dict[str, Any]:
+    # Get the best result from the results dictionary.
     best_result = results[best_model_key]
     strategy_metadata = dict(best_result.get("strategy_metadata", {}) or {})
     metrics = best_result.get("metrics", {})
 
     feature_contract_metadata = get_feature_contract_metadata(config_path)
-    validation_f1 = _metric_value(metrics, "validation", "f1_macro")
-    test_f1 = _metric_value(metrics, "test", "f1_macro")
-    log_loss_value = _metric_value(metrics, "validation", "log_loss")
+    validation_f1 = _metric_value(metrics, "validation", "f1_macro") # Get the validation f1 score.
+    test_f1 = _metric_value(metrics, "test", "f1_macro") # Get the test f1 score.
+    log_loss_value = _metric_value(metrics, "validation", "log_loss") # Get the validation log loss score.
 
     tags: Dict[str, Any] = {
+        # Strategic Information and Algorithms
         "strategy_name": strategy_metadata.get("strategy_name", best_model_key),
         "model_choice": strategy_metadata.get("model_choice", args.model_choice),
         "model_name": model_config.model_name,
         "model_version": model_config.model_version,
+
+        # Results of passing the promotion gate
         "feature_contract_hash": feature_contract_metadata.get("feature_contract_hash"),
         "promotion_status": promotion_result.status,
         "promotion_passed": promotion_result.passed,
+
+        # MLOps (Lineage and Provenance) trace management
         "git_sha": args.git_sha,
         "training_table": bq_config.training_table_fqn,
         "target_name": model_config.target_name,
@@ -964,6 +1002,7 @@ def build_registry_tags(
         "phase": "mlflow_mlops_upgrade",
     }
 
+    # Add the validation f1 score, test f1 score, and log loss score to the tags.
     if validation_f1 is not None:
         tags["validation_f1_macro"] = validation_f1
     if test_f1 is not None:
@@ -971,6 +1010,8 @@ def build_registry_tags(
     if log_loss_value is not None:
         tags["log_loss"] = log_loss_value
 
+    # Finally, if this training session has Optuna enabled for automatic parameter finding,
+    # the function will include additional information.
     optuna_result = best_result.get("optuna")
     if isinstance(optuna_result, dict):
         tags["optuna_enabled"] = optuna_result.get("enabled", False)
@@ -999,16 +1040,22 @@ def train_and_store_candidate(
 ) -> Dict[str, Any]:
     print(f"[train] Training {model_key}...")
 
+    # Split the data into training, validation, and test sets.
     x_train, y_train, w_train = split_xy(df, "train", model_config)
     x_val, y_val, _ = split_xy(df, "validation", model_config)
     x_test, y_test, _ = split_xy(df, "test", model_config)
 
+    # Save the weights of the data
     fit_kwargs = {}
     if w_train is not None:
+        # It acts like a router: it tells the preprocessor to avoid it,
+        # takes the w_train array through the Pipeline, and passes it directly into the .fit() function.
         fit_kwargs["model__sample_weight"] = w_train
 
+    # If Optuna is enabled, tune the LightGBM model.
     optuna_result: Optional[OptunaTuningResult] = None
     if optuna_settings is not None and optuna_settings.enabled:
+        # Tune the LightGBM model using Optuna.
         optuna_result = tune_lightgbm_pipeline(
             model_key=model_key,
             base_model_key=base_model_key,
@@ -1022,10 +1069,13 @@ def train_and_store_candidate(
             random_state=model_config.random_state,
         )
 
+        # Print the optuna result reasons.
         if optuna_result.enabled:
             for reason in optuna_result.reasons:
                 print(f"[optuna] {model_key}: {reason}")
 
+            # If the optuna result has best params, set them on the model.
+            # Using model__... techniques to pass data through the preprocessing layer and then to the core algorithm.
             if optuna_result.best_params:
                 model.set_params(
                     **{
@@ -1033,14 +1083,17 @@ def train_and_store_candidate(
                         for key, value in optuna_result.best_params.items()
                     }
                 )
+                # Print the best params and the best value.
                 print(
                     f"[optuna] {model_key}: best "
                     f"{optuna_result.metric_name}={optuna_result.best_value} "
                     f"trial={optuna_result.best_trial_number}"
                 )
 
+    # Train the model.
     model.fit(x_train, y_train, **fit_kwargs)
 
+    # Evaluate the model(accuracy, precision, recall, f1, etc.)
     split_metrics = {
         "train": evaluate_model(model, x_train, y_train),
         "validation": evaluate_model(model, x_val, y_val),
@@ -1049,6 +1102,7 @@ def train_and_store_candidate(
 
     artifact_version = f"{model_config.model_version}__{model_key}__{artifact_ts}"
 
+    # Save the model artifact.
     artifact_path = save_bundle(
         model=model,
         model_config=model_config,
@@ -1063,11 +1117,14 @@ def train_and_store_candidate(
         optuna_result=optuna_result,
     )
 
+    # Get the model artifact URI.
     model_artifact_uri = str(artifact_path)
 
+    # Upload the model artifact to GCS.
     if artifact_storage in ("gcs", "both"):
         if dry_run:
             print("[artifact] Dry run enabled. Skipping GCS artifact upload.")
+        # Upload the model artifact to GCS.
         else:
             model_artifact_uri = upload_file_to_gcs(
                 local_path=artifact_path,
@@ -1077,21 +1134,25 @@ def train_and_store_candidate(
                 ),
             )
 
+    # Return the model artifact.
     result: Dict[str, Any] = {
         "model": model,
         "artifact_path": artifact_path,
         "model_artifact_uri": model_artifact_uri,
         "metrics": split_metrics,
         "base_model_key": base_model_key,
-        "training_summary": summarize_training_data(df, model_config),
+        "training_summary": summarize_training_data(df, model_config), # to calculate how many lines of data this training session consumed.
     }
 
+    # Add the strategy metadata if the model is a strategy.
     if strategy is not None:
         result["strategy_metadata"] = strategy.metadata()
 
+    # Add the optuna result if it exists.
     if optuna_result is not None and optuna_result.enabled:
         result["optuna"] = optuna_result.to_dict()
 
+    # Print the artifact path and the validation metrics.
     print(f"[train] Saved artifact: {artifact_path}")
     print(
         f"[train] Validation metrics for {model_key}:\n"
@@ -1159,17 +1220,19 @@ def write_metrics_to_bigquery(
         job_config=job_config,
     ).result()
 
-
+# Summarize the training data.
 def summarize_training_data(
     df: pd.DataFrame,
     model_config: ModelConfig,
 ) -> Dict[str, Any]:
+    # Initialize the summary dictionary.
     summary: Dict[str, Any] = {
         "total_row_count": int(len(df)),
         "split_counts": {},
         "split_date_ranges": {},
     }
 
+    # Count the number of rows in each split.
     if model_config.split_column in df.columns:
         split_counts = df[model_config.split_column].value_counts().to_dict()
         summary["split_counts"] = {
@@ -1177,14 +1240,17 @@ def summarize_training_data(
             for split_name, row_count in split_counts.items()
         }
 
+    # Get the start and end timestamps for each split.
     if "hour_ts" not in df.columns or model_config.split_column not in df.columns:
         return summary
 
+    # Iterate over each split and get the start and end timestamps.
     for split_name, split_df in df.groupby(model_config.split_column):
         timestamps = pd.to_datetime(split_df["hour_ts"], errors="coerce", utc=True).dropna()
         if timestamps.empty:
             continue
 
+        # Get the start and end timestamps.
         summary["split_date_ranges"][str(split_name)] = {
             "start": timestamps.min().isoformat(),
             "end": timestamps.max().isoformat(),
@@ -1192,30 +1258,32 @@ def summarize_training_data(
 
     return summary
 
-
+# Flatten the model metrics.
 def flatten_model_metrics(results: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     flattened: Dict[str, Any] = {}
 
+    # The algorithm flattens the data using 3 nested loops:
     for model_key, result in results.items():
         for split_name, metrics in result.get("metrics", {}).items():
             for metric_name, metric_value in metrics.items():
                 flattened[f"{model_key}.{split_name}.{metric_name}"] = metric_value
 
+        # Get the optuna best value(if available).
         optuna_result = result.get("optuna")
         if isinstance(optuna_result, dict) and optuna_result.get("best_value") is not None:
             flattened[f"{model_key}.optuna_best_value"] = optuna_result.get("best_value")
 
     return flattened
 
-
+# Collect the optuna results.
 def collect_optuna_results(results: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     return {
         model_key: result["optuna"]
         for model_key, result in results.items()
-        if isinstance(result.get("optuna"), dict)
+        if isinstance(result.get("optuna"), dict) # Check if the result has dict.
     }
 
-
+# Save the optuna summary artifact.
 def save_optuna_summary_artifact(
     *,
     artifact_dir: Path,
@@ -1223,25 +1291,28 @@ def save_optuna_summary_artifact(
     results: Dict[str, Dict[str, Any]],
     best_model_key: str,
 ) -> Optional[Path]:
+    # Collect the optuna results.
     optuna_results = collect_optuna_results(results)
     if not optuna_results:
         return None
 
+    # Create the artifact directory if it doesn't exist.
     artifact_dir.mkdir(parents=True, exist_ok=True)
     summary_path = artifact_dir / f"optuna_summary_{run_id}.json"
     payload = {
         "run_id": run_id,
-        "best_model_key": best_model_key,
-        "optuna": optuna_results,
+        "best_model_key": best_model_key, # The best model key.
+        "optuna": optuna_results, # The optuna results.
         "created_at": utc_now().isoformat(),
     }
 
+    # Save the summary to the artifact directory.
     with summary_path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, default=str)
 
     return summary_path
 
-
+# Build the training summary artifact.
 def build_training_summary_artifact(
     artifact_dir: Path,
     run_id: str,
@@ -1254,10 +1325,14 @@ def build_training_summary_artifact(
     summary_path = artifact_dir / f"training_summary_{run_id}.json"
     payload = {
         "run_id": run_id,
+
         "best_model_key": best_model_key,
         "best_artifact_uri": best_artifact_uri,
-        "training_summary": summary,
-        "feature_contract": feature_contract_metadata,
+
+        "training_summary": summary, # The training summary.
+        "feature_contract": feature_contract_metadata, # The feature contract metadata.
+
+        # The promotion gate result(champion model).
         "promotion_gate": (
             promotion_result.to_dict()
             if promotion_result is not None
@@ -1265,7 +1340,7 @@ def build_training_summary_artifact(
         ),
         "created_at": utc_now().isoformat(),
     }
-
+    # Save the summary to the artifact directory.
     with summary_path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, default=str)
 
@@ -1289,15 +1364,17 @@ def log_optional_mlflow_training_run(
     promotion_gate_path: Optional[Path] = None,
     optuna_summary_path: Optional[Path] = None,
 ) -> None:
+    # Check if MLflow is enabled.
     if not is_mlflow_enabled():
         return
 
     try:
-        feature_contract_metadata = get_feature_contract_metadata(config_path)
-        training_summary = summarize_training_data(df, model_config)
-        best_result = results.get(best_model_key, {})
-        strategy_metadata = dict(best_result.get("strategy_metadata", {}) or {})
-        effective_model_choice = strategy_metadata.get("model_choice", args.model_choice)
+        feature_contract_metadata = get_feature_contract_metadata(config_path) # Get the feature contract metadata.
+        training_summary = summarize_training_data(df, model_config) # Summarize the training data.
+        best_result = results.get(best_model_key, {}) # Get the best model result.
+        strategy_metadata = dict(best_result.get("strategy_metadata", {}) or {}) # Get the strategy metadata.
+        effective_model_choice = strategy_metadata.get("model_choice", args.model_choice) # Get the effective model choice.
+        # Get the training mode(strategy matrix or strategy or legacy).
         training_mode = (
             "strategy_matrix"
             if args.strategy_matrix
@@ -1305,7 +1382,8 @@ def log_optional_mlflow_training_run(
             if args.strategy
             else "legacy"
         )
-
+        # Build the MLflow parameters.
+        # This is where input configuration parameters are stored.
         params: Dict[str, Any] = {
             "model_name": model_config.model_name,
             "model_version": model_config.model_version,
@@ -1320,7 +1398,7 @@ def log_optional_mlflow_training_run(
             "best_model_key": best_model_key,
             "total_row_count": training_summary["total_row_count"],
         }
-
+        # Add the promotion result if it exists.
         if promotion_result is not None:
             params.update(
                 {
@@ -1333,6 +1411,7 @@ def log_optional_mlflow_training_run(
                 }
             )
 
+        # Flatten the training summary(row_count, date_ranges)
         for split_name, row_count in training_summary.get("split_counts", {}).items():
             params[f"split.{split_name}.row_count"] = row_count
 
@@ -1340,9 +1419,11 @@ def log_optional_mlflow_training_run(
             params[f"split.{split_name}.start"] = date_range.get("start")
             params[f"split.{split_name}.end"] = date_range.get("end")
 
+        # Add the feature contract metadata
         params.update(feature_contract_metadata)
         params.update(strategy_metadata)
 
+        # Add the optuna results
         optuna_results = collect_optuna_results(results)
         best_optuna = best_result.get("optuna")
         params.update(
@@ -1356,7 +1437,6 @@ def log_optional_mlflow_training_run(
                 "optuna_strategy": args.optuna_strategy,
             }
         )
-
         if isinstance(best_optuna, dict):
             params.update(
                 {
@@ -1366,22 +1446,28 @@ def log_optional_mlflow_training_run(
                     "optuna_completed_trials": best_optuna.get("n_trials"),
                 }
             )
+            # Advanced Optina configuration data collection
             for param_name, param_value in dict(best_optuna.get("best_params") or {}).items():
                 params[f"optuna_best_{param_name}"] = param_value
 
+        # Add the strategy matrix configuration data
         if args.strategy_matrix:
+            # All the strategies involved in that battle:
             strategy_names = [
                 result.get("strategy_metadata", {}).get("strategy_name")
                 for result in results.values()
                 if result.get("strategy_metadata")
             ]
+            # Comma-separated list of all the strategies involved in that battle:
             params["strategy_matrix.names"] = ",".join(
                 str(strategy_name)
                 for strategy_name in strategy_names
                 if strategy_name
             )
 
+        # Add the tags for MLflow
         tags = {
+            # The phase of the experiment.
             "mlflow_phase": (
                 "phase_2_strategy_matrix"
                 if strategy_metadata
@@ -1392,13 +1478,14 @@ def log_optional_mlflow_training_run(
             "model_version": model_config.model_version,
             "model_choice": effective_model_choice,
             "target_name": model_config.target_name,
-            "training_table": bq_config.training_table_fqn,
-            "feature_contract_hash": feature_contract_metadata.get("feature_contract_hash"),
-            "git_sha": args.git_sha,
+            "training_table": bq_config.training_table_fqn, # The name of the training table in BigQuery.
+            "feature_contract_hash": feature_contract_metadata.get("feature_contract_hash"), # The hash of the feature contract.
+            "git_sha": args.git_sha, # The git SHA for the code that produced the model.
             "best_model_key": best_model_key,
-            "optuna_enabled": str(bool(optuna_results)).lower(),
+            "optuna_enabled": str(bool(optuna_results)).lower(), # Whether Optuna is enabled.
         }
         tags.update(strategy_metadata)
+        # Add the Optuna configuration data
         if isinstance(best_optuna, dict):
             tags.update(
                 {
@@ -1406,6 +1493,7 @@ def log_optional_mlflow_training_run(
                     "optuna_best_trial_number": best_optuna.get("best_trial_number"),
                 }
             )
+        # Add the promotion gate configuration data(champion model)
         if promotion_result is not None:
             tags.update(
                 {
@@ -1414,7 +1502,7 @@ def log_optional_mlflow_training_run(
                     "promotion_reason_count": len(promotion_result.reasons),
                 }
             )
-
+        # Build the training summary artifact.
         summary_artifact = build_training_summary_artifact(
             artifact_dir=artifact_dir,
             run_id=run_id,
@@ -1424,8 +1512,9 @@ def log_optional_mlflow_training_run(
             best_artifact_uri=best_artifact_uri,
             promotion_result=promotion_result,
         )
-
+        # Add the artifacts to the artifact paths.
         artifact_paths: List[Path] = [config_path, summary_artifact]
+        # Only append the file path to the sending list if available to avoid empty file errors.
         if manifest_path.exists():
             artifact_paths.append(manifest_path)
         if promotion_gate_path and promotion_gate_path.exists():
@@ -1433,15 +1522,17 @@ def log_optional_mlflow_training_run(
         if optuna_summary_path and optuna_summary_path.exists():
             artifact_paths.append(optuna_summary_path)
 
+        # Add the artifact paths to the sending list.
         for result in results.values():
             artifact_path = result.get("artifact_path")
             if artifact_path:
                 artifact_paths.append(Path(artifact_path))
 
-        mlflow_metrics = flatten_model_metrics(results)
-        if isinstance(best_optuna, dict) and best_optuna.get("best_value") is not None:
+        mlflow_metrics = flatten_model_metrics(results) # Flatten the model metrics.
+        if isinstance(best_optuna, dict) and best_optuna.get("best_value") is not None: # Add the Optuna best value.
             mlflow_metrics["optuna_best_value"] = best_optuna.get("best_value")
 
+        # Log the training run(MLflow).
         log_training_run(
             run_name=f"{model_config.model_name}_{model_config.model_version}_{run_id}",
             params=params,
@@ -1450,6 +1541,7 @@ def log_optional_mlflow_training_run(
             artifact_paths=artifact_paths,
         )
 
+    # Handle exceptions.
     except Exception as exc:
         handle_mlflow_error("Optional MLflow training logging failed", exc)
 
@@ -1457,18 +1549,21 @@ def log_optional_mlflow_training_run(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train crypto 4H direction model.")
 
+    # Add the command-line arguments.
     parser.add_argument(
         "--config",
         default="feature_list.yml",
         help="Path to feature_list.yml",
     )
 
+    # Add the artifact directory.
     parser.add_argument(
         "--artifact-dir",
         default="artifacts",
         help="Local artifact directory",
     )
 
+    # Add the model choice.
     parser.add_argument(
         "--model-choice",
         choices=["auto", "logistic", "lightgbm"],
@@ -1476,6 +1571,7 @@ def parse_args() -> argparse.Namespace:
         help="Which model to train.",
     )
 
+    # Add the strategy.
     parser.add_argument(
         "--strategy",
         choices=list_strategy_names(),
@@ -1483,23 +1579,28 @@ def parse_args() -> argparse.Namespace:
         help="Train exactly one named strategy. Overrides --model-choice for that run.",
     )
 
+    # Add the strategy matrix.
     parser.add_argument(
         "--strategy-matrix",
         action="store_true",
         help="Train all configured strategies and choose the best by the primary metric.",
     )
 
+    # Add the dry run(Safe test mode).
     parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Train and save locally, but do not write metrics to BigQuery.",
     )
 
+    # Add the git SHA(Attach the current Git Commitment code to the model's metadata to preserve code history (Lineage).)
     parser.add_argument(
         "--git-sha",
         default=os.environ.get("GIT_SHA"),
         help="Optional git SHA for lineage.",
     )
+
+    # Add the artifact storage.
     parser.add_argument(
         "--artifact-storage",
         choices=["local", "gcs", "both"],
@@ -1511,6 +1612,7 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    # Add the artifact GCS URI.
     parser.add_argument(
         "--artifact-gcs-uri",
         default=os.environ.get("ML_ARTIFACT_GCS_URI"),
@@ -1520,6 +1622,7 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    # Add the Optuna tuning.
     parser.add_argument(
         "--enable-optuna",
         action="store_true",
@@ -1527,6 +1630,7 @@ def parse_args() -> argparse.Namespace:
         help="Enable optional Optuna tuning for LightGBM candidates.",
     )
 
+    # Add the Optuna n trials.
     parser.add_argument(
         "--optuna-n-trials",
         type=int,
@@ -1534,6 +1638,7 @@ def parse_args() -> argparse.Namespace:
         help="Number of Optuna trials when tuning is enabled.",
     )
 
+    # Add the Optuna timeout seconds.
     parser.add_argument(
         "--optuna-timeout-seconds",
         type=int,
@@ -1545,18 +1650,21 @@ def parse_args() -> argparse.Namespace:
         help="Optional Optuna timeout in seconds.",
     )
 
+    # Add the Optuna study name.
     parser.add_argument(
         "--optuna-study-name",
         default=os.environ.get("ML_OPTUNA_STUDY_NAME"),
         help="Optional Optuna study name.",
     )
 
+    # Add the Optuna storage URI.
     parser.add_argument(
         "--optuna-storage-uri",
         default=os.environ.get("ML_OPTUNA_STORAGE_URI"),
         help="Optional Optuna storage URI, for example sqlite:///tmp/optuna.db.",
     )
 
+    # Add the Optuna direction.
     parser.add_argument(
         "--optuna-direction",
         choices=["maximize", "minimize"],
@@ -1564,6 +1672,7 @@ def parse_args() -> argparse.Namespace:
         help="Optuna optimization direction.",
     )
 
+    # Add the Optuna metric.
     parser.add_argument(
         "--optuna-metric",
         choices=["f1_macro", "accuracy", "log_loss"],
@@ -1571,6 +1680,7 @@ def parse_args() -> argparse.Namespace:
         help="Validation metric optimized by Optuna.",
     )
 
+    # Add the Optuna strategy.
     parser.add_argument(
         "--optuna-strategy",
         default=os.environ.get("ML_OPTUNA_STRATEGY"),
@@ -1580,6 +1690,7 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    # Add the Optuna fail on error.
     parser.add_argument(
         "--optuna-fail-on-error",
         action="store_true",
@@ -1589,7 +1700,9 @@ def parse_args() -> argparse.Namespace:
 
     return parser.parse_args()
 
+# Resolve the artifact GCS URI.
 def resolve_artifact_gcs_uri(config: Dict[str, Any], cli_artifact_gcs_uri: Optional[str]) -> Optional[str]:
+    # Check if the CLI artifact GCS URI is provided.
     if cli_artifact_gcs_uri:
         return cli_artifact_gcs_uri
 
@@ -1598,27 +1711,32 @@ def resolve_artifact_gcs_uri(config: Dict[str, Any], cli_artifact_gcs_uri: Optio
     if explicit_uri:
         return explicit_uri
 
+    # Check if the GCS bucket name is provided.
     bucket_env = artifact.get("gcs_bucket_env", "GCP_BUCKET_NAME")
     bucket_name = os.environ.get(bucket_env)
     gcs_prefix = artifact.get("gcs_prefix")
 
+    # Check if the GCS bucket name and prefix are provided.
     if bucket_name and gcs_prefix:
         return f"gs://{bucket_name}/{str(gcs_prefix).strip('/')}"
 
     return None
 
-
+# Resolve the artifact storage.
 def resolve_artifact_storage(
     config: Dict[str, Any],
     cli_artifact_storage: Optional[str],
     default: str,
 ) -> str:
+    # Check if the CLI artifact storage is provided.
     if cli_artifact_storage:
         return cli_artifact_storage.lower()
 
+    # Check if the artifact storage mode is provided.
     artifact = config.get("artifact", {})
     return str(artifact.get("storage_mode", default)).lower()
 
+# Resolve the latest manifest name.
 def resolve_latest_manifest_name(config: Dict[str, Any]) -> str:
     artifact = config.get("artifact", {})
     return str(artifact.get("latest_manifest_name", "latest_model.json"))
@@ -1632,14 +1750,17 @@ def main() -> int:
 
     config = load_yaml(config_path)
 
+    # Resolve the latest manifest name.
     latest_manifest_name = resolve_latest_manifest_name(config)
 
+    # Resolve the artifact storage.
     artifact_storage = resolve_artifact_storage(
         config=config,
         cli_artifact_storage=args.artifact_storage,
         default="local",
     )
 
+    # Resolve the artifact GCS URI.
     artifact_gcs_uri = resolve_artifact_gcs_uri(
         config=config,
         cli_artifact_gcs_uri=args.artifact_gcs_uri,
@@ -1660,9 +1781,9 @@ def main() -> int:
     run_id = str(uuid.uuid4())
     trained_at = utc_now()
     artifact_ts = trained_at.strftime("%Y%m%d_%H%M%S")
-    
+
     bq_config, model_config, training_config = build_configs(config) # Build the configurations.
-    optuna_settings = get_optuna_settings(
+    optuna_settings = get_optuna_settings( # Get the Optuna settings.
         enabled=args.enable_optuna,
         n_trials=args.optuna_n_trials,
         timeout_seconds=args.optuna_timeout_seconds,
@@ -1705,6 +1826,7 @@ def main() -> int:
     results: Dict[str, Dict[str, Any]] = {} # Store the results of each model.
     requested_strategies = resolve_requested_strategies(args)
 
+    # Run mode with fine-tuned strategy
     if requested_strategies:
         print("[train] Strategy mode enabled:")
         for strategy in requested_strategies:
@@ -1715,16 +1837,17 @@ def main() -> int:
                 f"window_days={strategy.train_window_days or 'all_history'})"
             )
 
+            # Apply the train window to the data.
             strategy_df = apply_train_window(
                 df,
                 split_column=model_config.split_column,
                 train_window_days=strategy.train_window_days,
             )
-            validate_training_data(strategy_df, model_config, training_config)
+            validate_training_data(strategy_df, model_config, training_config) # Validate the data.
 
-            strategy_models = build_models(model_config)
+            strategy_models = build_models(model_config) # Build the models.
             model = strategy_models[strategy.base_model_key]
-            results[strategy.name] = train_and_store_candidate(
+            results[strategy.name] = train_and_store_candidate( # Train and store the candidate.
                 model_key=strategy.name,
                 base_model_key=strategy.base_model_key,
                 model=model,
@@ -1741,6 +1864,7 @@ def main() -> int:
                 optuna_settings=optuna_settings,
             )
     else:
+        # Train all the models.
         models = filter_models_for_choice(build_models(model_config), args.model_choice)
         for model_key, model in models.items():
             results[model_key] = train_and_store_candidate(
@@ -1763,37 +1887,43 @@ def main() -> int:
     best_model_key = choose_best_model(results, model_config.primary_metric)
     best_artifact_path = results[best_model_key]["artifact_path"]
 
+    # Get the best artifact URI.
     best_artifact_uri = results[best_model_key].get(
         "model_artifact_uri",
         str(best_artifact_path),
     )
+    # Save the Optuna summary artifact.
     optuna_summary_path = save_optuna_summary_artifact(
         artifact_dir=artifact_dir,
         run_id=run_id,
         results=results,
         best_model_key=best_model_key,
     )
-
+    # Load the local champion metrics from the artifact directory.
     champion_metrics = load_local_champion_metrics(
         artifact_dir=artifact_dir,
         manifest_name=latest_manifest_name,
     )
+    # Get the best training summary.
     best_training_summary = results[best_model_key].get(
         "training_summary",
         summarize_training_data(df, model_config),
     )
+    # Evaluate the promotion gate.
     promotion_result = evaluate_promotion_gate(
         candidate_metrics=results[best_model_key]["metrics"],
         champion_metrics=champion_metrics,
         config=build_promotion_gate_config(config, training_config),
         split_date_ranges=best_training_summary.get("split_date_ranges"),
     )
+    # Save the promotion gate artifact.
     promotion_gate_path = save_promotion_gate_artifact(
         artifact_dir=artifact_dir,
         run_id=run_id,
         promotion_result=promotion_result,
     )
 
+    # Print the promotion result.
     print(
         f"[promotion] Status: {promotion_result.status} "
         f"(passed={promotion_result.passed})"
@@ -1819,6 +1949,7 @@ def main() -> int:
         promotion_result=promotion_result,
     )
 
+    # Upload the latest manifest to GCS.
     if artifact_storage in ("gcs", "both"):
         if args.dry_run:
             print("[artifact] Dry run enabled. Skipping GCS manifest upload.")
@@ -1849,6 +1980,7 @@ def main() -> int:
             git_sha=args.git_sha,
         )
 
+    # Log the optional MLflow training run.
     log_optional_mlflow_training_run(
         config_path=config_path,
         artifact_dir=artifact_dir,
@@ -1866,6 +1998,7 @@ def main() -> int:
         optuna_summary_path=optuna_summary_path,
     )
 
+    # Register the model if enabled.
     registry_result = register_model_if_enabled(
         model=results[best_model_key]["model"],
         run_name=f"{model_config.model_name}_{model_config.model_version}_{run_id}_registry",
@@ -1881,8 +2014,10 @@ def main() -> int:
             promotion_result=promotion_result,
         ),
     )
+    # Update the manifest with the registry result.
     update_manifest_with_registry_result(manifest_path, registry_result)
 
+    # Check if the registry is disabled.
     if registry_result.status == "disabled":
         print("[registry] Disabled. Skipping MLflow Model Registry.")
     else:

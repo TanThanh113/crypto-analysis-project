@@ -1,3 +1,11 @@
+"""Model-loading helpers for artifact-first and optional registry prediction.
+
+Production prediction defaults to the model artifact/latest_model.json contract.
+Registry loading is available only when explicitly configured, and callers can
+allow fallback to the artifact path to keep prediction robust while registry
+infrastructure is optional.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,6 +29,7 @@ def build_registry_model_uri(
     registered_model_name: str | None,
     model_alias: str,
 ) -> str:
+    """Build the MLflow model URI used by optional registry loading."""
     if mlflow_model_uri:
         return mlflow_model_uri
 
@@ -45,6 +54,12 @@ def load_registry_model_bundle(
     target_name: str,
     valid_classes: Sequence[str],
 ) -> ModelLoadResult:
+    """Load a model bundle from MLflow Registry or an explicit model URI.
+
+    The returned bundle matches the artifact bundle shape expected by
+    predict_latest.py. This function imports MLflow lazily so artifact-based
+    prediction does not require Registry configuration.
+    """
     import mlflow
     import mlflow.sklearn
 
@@ -131,6 +146,12 @@ def load_model_with_fallback(
     target_name: str,
     valid_classes: Sequence[str],
 ) -> ModelLoadResult:
+    """Load a model from artifact, registry, or auto mode.
+
+    In auto mode, the artifact loader is used unless registry configuration is
+    complete. Registry failures can fall back to the artifact path unless strict
+    mode or fallback_to_artifact=False is requested.
+    """
     source = model_source.lower()
     if source not in {"artifact", "registry", "auto"}:
         raise ValueError(f"Invalid model_source={model_source}. Use artifact, registry, or auto.")

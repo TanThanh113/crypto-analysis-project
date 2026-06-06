@@ -1,9 +1,17 @@
+"""Named training strategies for the ML strategy matrix.
+
+Strategies describe which base model to train, whether to use all history or a
+rolling training window, and which validation policy is being tested. The
+default train_model.py behavior remains backward compatible when no strategy
+flag is provided.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
-
+# This file contains the training strategy configuration.
 @dataclass(frozen=True)
 class TrainingStrategy:
     name: str
@@ -12,6 +20,7 @@ class TrainingStrategy:
     train_window_days: int | None
     validation_policy: str
 
+    # This is the model choice for the strategy.
     @property
     def model_choice(self) -> str:
         return self.model_type
@@ -29,7 +38,7 @@ class TrainingStrategy:
             "model_choice": self.model_choice,
         }
 
-
+# The training strategies.
 _STRATEGIES = (
     TrainingStrategy(
         name="logistic_baseline_all_history",
@@ -63,16 +72,20 @@ _STRATEGIES = (
 
 _STRATEGIES_BY_NAME = {strategy.name: strategy for strategy in _STRATEGIES}
 
-
+# Returns a raw list of all four strategic entities as a list array.
 def list_strategies() -> list[TrainingStrategy]:
+    """Return all configured training strategies in deterministic order."""
     return list(_STRATEGIES)
 
-
+# Returns a list containing only the strings containing the strategy names
+# (["logistic_baseline_all_history", "lightgbm_all_history_fixed_params", ...])
 def list_strategy_names() -> list[str]:
+    """Return valid CLI choices for --strategy."""
     return [strategy.name for strategy in _STRATEGIES]
 
-
+# The strategic plan involves a tight defense.
 def get_strategy(name: str) -> TrainingStrategy:
+    """Look up a named strategy or raise a clear KeyError."""
     try:
         return _STRATEGIES_BY_NAME[name]
     except KeyError as exc:

@@ -1,268 +1,325 @@
-# Crypto Analytics & ML Pipeline
+# Crypto Analytics and ML Signal Platform
 
-An end-to-end data engineering and machine learning project for crypto market analytics, risk monitoring, and directional signal modeling.
+An end-to-end data engineering and MLOps project for crypto market analytics, risk monitoring, and directional signal research.
 
-This project builds a production-style pipeline that collects crypto market, derivatives, liquidity, macro, ETF, and sentiment data; transforms it with dbt on BigQuery; orchestrates workloads with Kestra; stores Docker images in Google Artifact Registry; trains ML models; stores model artifacts in GCS; and powers dashboards in Looker Studio.
+This repository demonstrates how raw market, derivatives, liquidity, macro, ETF, sentiment, and operational data can be collected, modeled, orchestrated, monitored, and used for conservative ML signal generation on Google Cloud.
 
-> This project is for data engineering, analytics, and ML system design demonstration purposes only. It is not financial advice.
+> Scope note: this is an analytics and ML signal platform, not a trading bot, not financial advice, and not automated trading infrastructure. The production ML contract remains conservative. Research candidates such as the microstructure/subset9 feature set are kept as manual or research configurations until source coverage and validation evidence are strong enough.
 
 ---
 
-## Project Highlights
+## Architecture Overview
 
-* Batch data ingestion for crypto trades, funding, options, liquidation heatmaps, macro, ETF, stablecoin, exchange reserve, Reddit, and Telegram data.
-* BigQuery/dbt transformation layer with staging, intermediate, mart, dashboard, and ML-ready models.
-* Kestra orchestration for daily, hourly, intraday, dbt, and ML workflows.
-* Dockerized batch, dbt, and ML workloads.
-* Google Artifact Registry for production Docker image storage.
-* GCS-based ML model artifact registry using `latest_model.json`.
-* ML training pipeline with metrics written to BigQuery.
-* Looker Studio dashboard for executive overview, market risk, derivatives, liquidity, macro, and ML monitoring.
-* Infrastructure as Code with Terraform for GCP resources.
+```mermaid
+flowchart LR
+  subgraph Sources["Data Sources"]
+    Binance["Binance trades"]
+    Funding["Funding rates"]
+    ETF["ETF indicators"]
+    Macro["Macro indicators"]
+    Other["Options, liquidation, stablecoin, reserve, sentiment"]
+  end
+
+  subgraph Ingestion["Ingestion"]
+    Batch["Batch collectors"]
+    Streaming["Streaming pipeline"]
+  end
+
+  subgraph Storage["Lakehouse / Warehouse"]
+    GCS["GCS"]
+    Iceberg["BigLake / Iceberg"]
+    BQ["BigQuery"]
+  end
+
+  subgraph Transform["Transformation"]
+    DBT["dbt Core"]
+    Marts["Core, dashboard, ML, monitoring marts"]
+  end
+
+  subgraph MLOps["ML / MLOps"]
+    Train["ML training"]
+    MLflow["MLflow optional"]
+    Optuna["Optuna optional"]
+    Registry["Model Registry optional"]
+    Predict["Prediction flow"]
+  end
+
+  subgraph Ops["Orchestration / Infra / CI"]
+    Kestra["Kestra"]
+    Docker["Docker images"]
+    AR["Artifact Registry"]
+    TF["Terraform"]
+    GKE["GKE"]
+    CI["GitHub Actions"]
+  end
+
+  Sources --> Batch
+  Sources --> Streaming
+  Batch --> GCS --> Iceberg --> BQ
+  Streaming --> BQ
+  BQ --> DBT --> Marts
+  Marts --> Train --> Predict --> Marts
+  Train -. optional logging .-> MLflow
+  Train -. optional tuning .-> Optuna
+  Train -. optional registration .-> Registry
+  CI --> Docker --> AR --> GKE
+  TF --> GKE
+  Kestra --> Batch
+  Kestra --> DBT
+  Kestra --> Train
+  Kestra --> Predict
+```
+
+Detailed architecture diagrams are in [docs/architecture.md](docs/architecture.md).
+
+---
+
+## What This Project Demonstrates
+
+| Area | What is demonstrated |
+| --- | --- |
+| Data engineering | Batch ingestion, streaming preparation, layered dbt models, BigQuery marts, data quality and freshness checks |
+| Cloud architecture | GCS, BigQuery, BigLake/Iceberg, GKE, Artifact Registry, Cloud SQL-backed Kestra, Terraform-managed infrastructure |
+| Orchestration | Kestra flows for raw ingestion, dbt transforms, monitoring, quality checks, ML training, and prediction |
+| MLOps | Feature contracts, strategy matrix training, optional MLflow logging, optional Optuna tuning, optional registry loading, promotion gates, artifact fallback |
+| CI/CD | GitHub Actions quality checks, Docker build gating, Kestra deploy gating, PR preview flow generation, repo guard checks |
+| Analytics | Dashboard-ready marts for market, derivatives, liquidity, macro/ETF, monitoring, and ML quality views |
 
 ---
 
 ## Tech Stack
 
-| Layer                 | Tools                                          |
-| --------------------- | ---------------------------------------------- |
-| Cloud                 | Google Cloud Platform                          |
-| Storage               | GCS, BigLake/Iceberg, BigQuery                 |
-| Transformation        | dbt, BigQuery SQL                              |
-| Orchestration         | Kestra                                         |
-| Containerization      | Docker                                         |
-| Image Registry        | Google Artifact Registry                       |
-| ML                    | Python, scikit-learn, LightGBM-ready structure |
-| Dashboard             | Looker Studio                                  |
-| Infrastructure        | Terraform                                      |
-| Dependency Management | uv                                             |
+| Layer | Tools |
+| --- | --- |
+| Cloud | Google Cloud Platform |
+| Storage | GCS, BigLake/Iceberg, BigQuery |
+| Transformation | dbt Core, BigQuery SQL |
+| Orchestration | Kestra on GKE |
+| Containers | Docker, Google Artifact Registry |
+| Infrastructure | Terraform, GKE, Cloud SQL, Workload Identity |
+| ML | Python, scikit-learn, LightGBM, optional XGBoost for local research only |
+| MLOps | MLflow optional logging, optional MLflow Registry, Optuna optional tuning |
+| CI/CD | GitHub Actions |
+| Monitoring | dbt monitoring marts, Great Expectations audit flow, pipeline health checks, dashboard tables |
+
+---
+
+## Current Data Coverage Status
+
+The project is not yet a full-coverage market data platform. The most reliable 5-year backfill coverage currently centers on:
+
+1. Binance trades
+2. ETF indicators
+3. Macro indicators
+4. Funding data
+
+Other sources, including stablecoin, liquidation, options, exchange reserve, Reddit/Telegram sentiment, and live taker-pressure context, may be partial, experimental, or not fully live-ready. Model results should be interpreted as research evidence under current source coverage, not as proof of trading edge.
 
 ---
 
 ## Repository Structure
 
-```text
-crypto-analysis-project/
-├── dbt_transform/              # dbt project and BigQuery transformation models
-├── local_scripts/              # batch ingestion scripts
-├── ml/                         # ML training, prediction, and feature contract
-├── docker/                     # production Dockerfile copies
-├── kestra/flows/               # Kestra production flow YAML files
-├── terraform/                  # main GCP infrastructure
-├── terraform-bootstrap/        # bootstrap service account / IAM setup
-├── terraform-grafana/          # Grafana-related infrastructure
-├── docs/                       # architecture and operations documentation
-└── README.md
-```
+| Path | Purpose |
+| --- | --- |
+| [.github/workflows](.github/workflows) | CI/CD workflows for quality checks, Docker images, Kestra deploy, PR gates, cleanup |
+| [.github/scripts](.github/scripts) | GitHub Actions helper scripts such as Kestra deploy planning and flow sync |
+| [local_scripts/batch](local_scripts/batch) | Batch collectors, validation, quality audit, monitoring, alerting, backfill helpers |
+| [local_scripts/streaming](local_scripts/streaming) | Streaming producers and Flink/Kafka-related local pipeline files |
+| [dbt_transform/crypto_dbt](dbt_transform/crypto_dbt) | dbt project with staging, intermediate, core, dashboard, ML, and monitoring marts |
+| [kestra/flows-gke](kestra/flows-gke) | GKE-oriented Kestra flows for raw, dbt, ML, monitoring, quality, preview, and master orchestration |
+| [ml](ml) | Training, prediction, feature contract, MLflow/Optuna/registry utilities, promotion gate, local research tools |
+| [docker](docker) | Production Dockerfiles for batch, dbt, and ML images |
+| [terraform](terraform) | Main GCP infrastructure definitions |
+| [terraform-bootstrap](terraform-bootstrap) | Bootstrap IAM/service-account setup |
+| [terraform-grafana](terraform-grafana) | Grafana-related infrastructure artifacts |
+| [helm](helm) and [k8s](k8s) | Kestra Helm values and Kubernetes support manifests |
+| [scripts](scripts) | Repository guard and operational helper scripts |
+| [docs](docs) | Architecture, pipeline, orchestration, MLOps, runbook, and repository documentation |
+
+See [docs/repository_map.md](docs/repository_map.md) for a folder-by-folder guide.
 
 ---
 
-## Data Pipeline Overview
+## Pipeline Overview
 
-```text
-Raw data collectors
-  -> GCS / BigLake / Iceberg
-  -> BigQuery staging models
-  -> dbt intermediate models
-  -> dbt marts
-  -> Looker Studio dashboard
-```
+### Data Sources
 
-Main dbt layers:
+The project includes collectors or models for Binance trades, funding, ETF, macro, options, liquidation, stablecoin, exchange reserves, Reddit, Telegram, and streaming market signals. Current reliability differs by source; see [docs/batch_pipeline.md](docs/batch_pipeline.md) and [docs/streaming_pipeline.md](docs/streaming_pipeline.md).
 
-```text
-staging      -> source normalization
-intermediate -> feature engineering and hourly/daily aggregation
-marts/core   -> reusable analytical facts and dimensions
-marts/dashboard -> dashboard-ready tables
-marts/ml     -> ML feature, label, training, prediction, and monitoring tables
-```
+### Batch Pipeline
+
+Batch collectors in [local_scripts/batch](local_scripts/batch) extract raw and intermediate data, support backfills, validate outputs, and load curated data to cloud storage or BigQuery depending on the script/flow. Daily snapshots and backfills are orchestrated through Kestra for production-style runs.
+
+More detail: [docs/batch_pipeline.md](docs/batch_pipeline.md).
+
+### Streaming Pipeline
+
+The streaming area contains producer and Flink/Kafka-oriented local components for lower-latency market, on-chain, and sentiment signals. Streaming is useful for recent prediction input freshness, but parts of this path are still experimental or partial compared with the batch path.
+
+More detail: [docs/streaming_pipeline.md](docs/streaming_pipeline.md).
+
+### dbt Transformations
+
+dbt models are organized into staging, intermediate, marts/core, marts/dashboard, marts/ml, and marts/monitoring layers. The ML marts provide training data, labels, prediction inputs, prediction outputs, model metrics, and quality monitoring views.
+
+More detail: [docs/dbt_models.md](docs/dbt_models.md).
+
+### ML and MLOps
+
+The production default remains conservative:
+
+- [ml/train_model.py](ml/train_model.py) is the training entrypoint.
+- [ml/predict_latest.py](ml/predict_latest.py) is the prediction entrypoint.
+- [ml/feature_list.yml](ml/feature_list.yml) is the production feature contract.
+- [ml/feature_contract.py](ml/feature_contract.py) hashes and summarizes the feature contract.
+- [ml/promotion_gate.py](ml/promotion_gate.py) prevents automatic promotion of worse candidates.
+- [ml/model_loader.py](ml/model_loader.py) centralizes artifact-vs-registry model loading.
+- [ml/mlflow_utils.py](ml/mlflow_utils.py), [ml/mlflow_registry.py](ml/mlflow_registry.py), and [ml/optuna_tuning.py](ml/optuna_tuning.py) are optional and off unless configured.
+- `local_*.py` scripts are local research tooling, not production serving paths.
+
+No new production model is promoted by default, and microstructure/subset9 remains a research/manual candidate.
+
+More detail: [docs/ml_mLOps.md](docs/ml_mLOps.md).
+
+### Kestra Orchestration
+
+Kestra flow groups cover raw ingestion, dbt transforms, ML, monitoring, quality, PR preview validation, and master overview flows. Batch/dbt flow deployment remains independent of the ML deploy flag. ML flow deployment is gated by `ENABLE_ML_KESTRA_DEPLOY`.
+
+More detail: [docs/kestra_orchestration.md](docs/kestra_orchestration.md).
 
 ---
 
-## ML Pipeline Overview
+## Docker, Infrastructure, and CI/CD
+
+Production-style images:
 
 ```text
-mart_ml_training_dataset_hourly
-  -> train_model.py
-  -> model_metrics table in BigQuery
-  -> model artifact uploaded to GCS
-  -> latest_model.json points to the active model artifact
+crypto-batch -> batch extraction, validation, monitoring, quality utilities
+crypto-dbt   -> dbt BigQuery transformations
+crypto-ml    -> training, prediction, and MLOps utilities
 ```
 
-Prediction flow:
+Images are built from [docker](docker) and stored in Google Artifact Registry. Terraform provisions the main GCP resources, GKE/Kestra infrastructure, BigQuery datasets/tables, GCS buckets, and Workload Identity-related resources.
 
-```text
-mart_ml_prediction_input_latest
-  -> predict_latest.py
-  -> model_predictions table in BigQuery
-  -> mart_ml_predictions_latest
-  -> dashboard monitoring
-```
+CI/CD uses GitHub Actions for:
 
-Current ML setup includes:
+- repository quality checks
+- ML/dbt/test validation
+- Docker image build and smoke checks when Docker/runtime changes or deployable Kestra flows require them
+- Kestra deploy planning and deploy gating
+- PR required gate aggregation
+- cleanup of preview images and flows
 
-* Explicit feature contract in `ml/feature_list.yml`
-* Consistent feature list for training and prediction
-* GCS model artifact storage
-* BigQuery model metrics
-* dbt mart for model monitoring
-* Baseline classification model for 4-hour direction prediction
+Docker build gating and Kestra deploy gating reduce unnecessary PR cost and avoid requiring live Kestra/Cloud SQL when no deployable flows exist.
 
-MLOps training upgrades are optional. The GKE daily training flow keeps the
-legacy `--model-choice auto` behavior by default. To compare the full strategy
-matrix manually, run the Kestra flow `the_ml_strategy_matrix_train_gke`. MLflow
-experiment logging and Model Registry registration are enabled only when the
-corresponding Kestra inputs or environment variables are supplied, such as
-`mlflow_tracking_uri`, `mlflow_enable_model_registry`,
-`mlflow_update_model_alias`, and `mlflow_model_alias`. Prediction uses the
-GCS/local `latest_model.json` artifact contract by default. MLflow Registry alias
-loading for prediction is optional and must be enabled with model source flags or
-Kestra inputs.
+---
 
-Optuna tuning is also optional and is not used by the daily training flow unless
-you explicitly enable it. It only tunes LightGBM candidates. A small local dry
-run looks like:
+## Monitoring and Dashboards
+
+The repo includes dbt monitoring marts and batch monitoring/quality utilities for pipeline health, data freshness, Great Expectations audit status, failed checks, model metrics, feature quality, and latest predictions. Dashboard-ready marts are designed for Looker Studio or similar BI tooling.
+
+---
+
+## Run Locally
+
+Local commands depend on which subsystem you are validating. These examples avoid real production writes unless you provide credentials and intentionally run cloud-connected commands.
+
+### Python Quality Checks
 
 ```bash
-cd ml
+cd /home/thanh/crypto-analysis-project/ml
+.venv/bin/python -m pytest tests
+```
+
+### dbt Parse or Build
+
+```bash
+cd /home/thanh/crypto-analysis-project/dbt_transform/crypto_dbt
+uv run dbt parse
+uv run dbt build --select marts.ml
+```
+
+Only run cloud-backed dbt builds when your BigQuery profile and target datasets are intentionally configured.
+
+### ML Local Dry Run
+
+```bash
+cd /home/thanh/crypto-analysis-project/ml
 .venv/bin/python train_model.py \
   --config feature_list.yml \
-  --strategy lightgbm_rolling_90d \
   --artifact-storage local \
   --artifact-dir artifacts/local_test \
-  --enable-optuna \
-  --optuna-n-trials 20 \
   --dry-run
 ```
 
-For Kestra, use the manual flow `the_ml_strategy_matrix_train_gke` and set
-`enable_optuna=true`. Daily defaults remain tuning-free to avoid surprise cost.
+This keeps artifacts local and skips BigQuery metric writes. Optional MLflow, Optuna, and Registry behavior require explicit env vars or flags.
 
----
-
-## Docker Images
-
-Production images are stored in Google Artifact Registry:
-
-```text
-asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
-asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-dbt:latest
-asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-ml:latest
-```
-
-Local build commands:
+### Local Research Runner
 
 ```bash
-docker build -t crypto-batch:local -f docker/batch.Dockerfile local_scripts
-docker build -t crypto-dbt:local -f docker/dbt.Dockerfile dbt_transform
-docker build -t crypto-ml:local -f docker/ml.Dockerfile ml
+cd /home/thanh/crypto-analysis-project/ml
+MLFLOW_TRACKING_URI=sqlite:////home/thanh/crypto-analysis-project/ml/artifacts/local_research/mlflow/mlflow.db \
+MLFLOW_EXPERIMENT_NAME=crypto_direction_4h_local_automl \
+MLFLOW_ARTIFACT_ROOT=file:///home/thanh/crypto-analysis-project/ml/artifacts/local_research/mlflow/artifacts \
+.venv/bin/python local_automl_research.py \
+  --config feature_list.yml \
+  --artifact-dir artifacts/local_research/smoke \
+  --artifact-storage local \
+  --dry-run \
+  --max-candidates 4 \
+  --optuna-n-trials 2
+```
+
+Research artifacts stay under `ml/artifacts/local_research/`.
+
+### Repository Guard
+
+```bash
+cd /home/thanh/crypto-analysis-project
+python scripts/repo_guard.py
+git diff --check
 ```
 
 ---
 
-## Kestra Workflows
+## Safety Notes
 
-The project uses Kestra for orchestration.
-
-Main workflow groups:
-
-```text
-raw/
-  the_daily_snapshot_binance
-  the_daily_snapshot_macro
-  the_daily_snapshot_etf
-  the_hourly_snapshot
-  the_intraday_shift
-
-dbt/
-  the_dbt_daily_market_transform
-  the_dbt_daily_macro_transform
-  the_dbt_daily_etf_transform
-  the_dbt_hourly_transform
-  the_dbt_intraday_transform
-
-ml/
-  the_ml_train_daily
-  the_ml_predict_hourly
-
-master/
-  the_crypto_pipeline_overview
-```
-
-The production Kestra flows use Artifact Registry images instead of local Docker images.
+- Do not commit `.env`, service account JSON keys, Terraform state, local artifacts, local model files, or backfill outputs.
+- Do not describe this project as a production trading bot.
+- Do not run backfill, training, deploy, or BigQuery/GCS write paths without an explicit target and cost expectation.
+- MLflow, Optuna, and MLflow Registry are optional and off by default.
+- Prediction uses artifact/latest-model fallback behavior by default; Registry loading is optional.
+- `ml/feature_list.yml` remains the conservative production feature contract.
+- Additive dbt columns can exist before the production ML contract uses them.
 
 ---
 
-## Dashboard
+## Current Limitations
 
-The Looker Studio dashboard includes:
-
-1. Executive Overview
-2. Market Overview
-3. Derivatives Risk
-4. Social, Liquidity, Macro, and ETF Risk
-5. ML Quality and Model Monitoring
-6. Pipeline and MLOps Overview
-
-Dashboard metrics include:
-
-* BTC and ETH price and returns
-* Market regime and core signal
-* Derivatives risk score
-* Liquidity risk score
-* Social sentiment score
-* Macro risk score
-* Data freshness
-* Feature completeness
-* Label distribution
-* Model F1, accuracy, and quality label
-* Latest model artifact metadata
+- Source coverage is partial outside Binance trades, ETF, macro, and funding backfills.
+- Streaming is not the primary trusted full-history path yet.
+- Research candidates have not replaced the baseline production model.
+- Microstructure/subset9 features are manual/research candidates, not the default production contract.
+- Dashboard and monitoring quality depend on freshness and coverage of upstream sources.
+- Cloud execution depends on configured GCP, Workload Identity, Kestra, Cloud SQL, BigQuery, and Artifact Registry resources.
 
 ---
 
-## Current Status
+## Roadmap
 
-Completed:
-
-* GitHub repository initialized
-* Secret and artifact files ignored
-* Docker images built and pushed to Artifact Registry
-* Terraform Artifact Registry resource added
-* Kestra flows synchronized into the repository
-* ML training flow tested through Kestra using Artifact Registry image
-* Model artifacts uploaded to GCS
-* Model metrics written to BigQuery
-* Looker Studio dashboard created
-
-Pending or future improvements:
-
-* Productionize streaming pipeline
-* Enable hourly ML prediction after streaming input is available
-* Add GitHub Actions for CI/CD
-* Add automated Kestra flow deployment from GitHub
-* Improve model quality beyond baseline
-* Add monitoring and alerting for pipeline failures
+1. Improve taker-pressure and microstructure source coverage.
+2. Harden streaming-to-prediction input freshness.
+3. Expand feature/label diagnostics before promoting new model contracts.
+4. Keep model promotion conservative and validation-driven.
+5. Extend monitoring around data completeness, class drift, feature drift, and prediction freshness.
+6. Continue reducing PR/deploy cost through targeted CI/CD gates.
 
 ---
 
-## Security Notes
+## Portfolio Highlights
 
-This repository intentionally excludes:
-
-* `.env` files
-* Terraform state files
-* Terraform variable files
-* Service account JSON keys
-* Local ML artifacts
-* Local output data
-* Backfill state files
-* Streaming secrets
-
-Secrets are expected to be managed through Kestra secrets, environment variables, or GCP IAM.
-
----
-
-## Disclaimer
-
-This project is intended for portfolio, data engineering, and ML system design demonstration. It should not be used as financial advice or as a live trading system without further validation, risk controls, and compliance review.
+- Built a cloud-native crypto analytics platform with ingestion, lakehouse storage, dbt marts, orchestration, ML, monitoring, and CI/CD.
+- Designed conservative MLOps controls: feature contracts, artifact fallback, optional registry, optional tuning, and promotion gates.
+- Implemented local research tooling for AutoML, feature diagnostics, ablation, keeper validation, and production readiness review.
+- Added PR-safe deployment patterns for Docker image builds and Kestra flow deployment.
+- Documented source coverage limitations and avoided overstating model quality or trading capability.

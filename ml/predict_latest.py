@@ -13,6 +13,9 @@ Important:
 - Output schema matches Terraform table: ml_outputs.model_predictions
 - model_name/model_version must match dim_ml_model_registry
 - train_model.py and predict_latest.py must use the same feature_list.yml
+- The default model source is the artifact/latest_model.json contract.
+- MLflow Registry loading is optional and can fall back to the artifact source
+  when configured to do so.
 """
 
 from __future__ import annotations
