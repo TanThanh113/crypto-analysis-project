@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Crypto Analytics Project Explorer</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Project explorer navigation">
+        <div class="brand-block">
+          <p class="eyebrow">Static documentation</p>
+          <h1>Crypto Analytics Explorer</h1>
+          <p class="brand-copy">A recruiter-friendly map of the platform architecture, repo layout, and production boundaries.</p>
+        </div>
+        <nav class="tab-list" id="tabList" aria-label="Explorer tabs"></nav>
+        <div class="sidebar-note">
+          <span class="dot"></span>
+          <span>No backend, build step, training, deploy, or cloud write is required.</span>
+        </div>
+      </aside>
+
+      <main class="content" id="content">
+        <header class="hero-panel">
+          <div>
+            <p class="eyebrow">Crypto analytics and ML signal platform</p>
+            <h2>Understand the project in minutes.</h2>
+            <p>
+              This static page turns the repository into a guided visual tour: architecture, batch and streaming paths,
+              dbt layers, ML/MLOps controls, Kestra orchestration, CI/CD gates, and research-vs-production boundaries.
+            </p>
+          </div>
+          <div class="hero-actions" aria-label="Reference links">
+            <a href="../../README.md">README</a>
+            <a href="../architecture.md">Architecture</a>
+            <a href="../repository_map.md">Repo map</a>
+            <a href="project_map.json">Project JSON</a>
+          </div>
+        </header>
+
+        <section class="status-strip" aria-label="Project scope notes">
+          <div>
+            <strong>Scope</strong>
+            <span>Analytics + ML signals, not a trading bot</span>
+          </div>
+          <div>
+            <strong>Backfill confidence</strong>
+            <span>Strongest for Binance trades, ETF, Macro, Funding</span>
+          </div>
+          <div>
+            <strong>MLOps</strong>
+            <span>MLflow / Optuna / Registry optional and off by default</span>
+          </div>
+        </section>
+
+        <div class="data-mode" id="dataMode" hidden></div>
+        <section id="app" aria-live="polite"></section>
+      </main>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>

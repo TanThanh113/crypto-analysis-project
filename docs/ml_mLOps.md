@@ -4,6 +4,8 @@ The ML subsystem trains and serves conservative crypto direction signals from db
 
 Production behavior remains artifact-first and conservative. MLflow, Optuna, and Registry features are optional and disabled unless configured.
 
+![ML and MLOps workflow](diagrams/ml_mLOps_workflow.svg)
+
 ## Main Flow
 
 ```mermaid

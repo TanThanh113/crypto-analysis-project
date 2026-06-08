@@ -106,5 +106,7 @@ This map groups the repository by function so reviewers can understand where to 
 | --- | --- |
 | `README.md` | Portfolio-level overview |
 | `docs/architecture.md` | Architecture diagrams and flow descriptions |
+| `docs/interactive/index.html` | Static interactive project explorer for recruiters and reviewers |
+| `docs/diagrams` | Exported SVG diagrams and editable Mermaid source files |
 | `docs/*_pipeline.md`, `docs/*models.md`, `docs/*orchestration.md` | Module-specific documentation |
 | `docs/runbook.md`, `docs/production-runbook.md` | Operational runbooks |

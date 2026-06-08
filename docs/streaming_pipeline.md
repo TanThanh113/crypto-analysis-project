@@ -2,6 +2,8 @@
 
 The streaming pipeline is the lower-latency data path for recent crypto market and context signals. It is useful for freshness experiments and future prediction-input automation, but it should be treated as partial/experimental compared with the batch path until operational coverage is stronger.
 
+![Streaming pipeline](diagrams/streaming_pipeline.svg)
+
 ## What It Does
 
 - Produces market, on-chain, and sentiment messages.

@@ -2,6 +2,8 @@
 
 The dbt project lives in `dbt_transform/crypto_dbt` and organizes BigQuery transformations into source-normalized staging models, aligned intermediate models, reusable marts, dashboard marts, ML marts, and monitoring marts.
 
+![dbt transformation layers](diagrams/dbt_layers.svg)
+
 ## Layers
 
 | Layer | Path | Purpose |

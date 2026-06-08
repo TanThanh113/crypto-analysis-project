@@ -10,67 +10,15 @@ This repository demonstrates how raw market, derivatives, liquidity, macro, ETF,
 
 ## Architecture Overview
 
-```mermaid
-flowchart LR
-  subgraph Sources["Data Sources"]
-    Binance["Binance trades"]
-    Funding["Funding rates"]
-    ETF["ETF indicators"]
-    Macro["Macro indicators"]
-    Other["Options, liquidation, stablecoin, reserve, sentiment"]
-  end
-
-  subgraph Ingestion["Ingestion"]
-    Batch["Batch collectors"]
-    Streaming["Streaming pipeline"]
-  end
-
-  subgraph Storage["Lakehouse / Warehouse"]
-    GCS["GCS"]
-    Iceberg["BigLake / Iceberg"]
-    BQ["BigQuery"]
-  end
-
-  subgraph Transform["Transformation"]
-    DBT["dbt Core"]
-    Marts["Core, dashboard, ML, monitoring marts"]
-  end
-
-  subgraph MLOps["ML / MLOps"]
-    Train["ML training"]
-    MLflow["MLflow optional"]
-    Optuna["Optuna optional"]
-    Registry["Model Registry optional"]
-    Predict["Prediction flow"]
-  end
-
-  subgraph Ops["Orchestration / Infra / CI"]
-    Kestra["Kestra"]
-    Docker["Docker images"]
-    AR["Artifact Registry"]
-    TF["Terraform"]
-    GKE["GKE"]
-    CI["GitHub Actions"]
-  end
-
-  Sources --> Batch
-  Sources --> Streaming
-  Batch --> GCS --> Iceberg --> BQ
-  Streaming --> BQ
-  BQ --> DBT --> Marts
-  Marts --> Train --> Predict --> Marts
-  Train -. optional logging .-> MLflow
-  Train -. optional tuning .-> Optuna
-  Train -. optional registration .-> Registry
-  CI --> Docker --> AR --> GKE
-  TF --> GKE
-  Kestra --> Batch
-  Kestra --> DBT
-  Kestra --> Train
-  Kestra --> Predict
-```
+![High-level project architecture](docs/diagrams/overview_architecture.svg)
 
 Detailed architecture diagrams are in [docs/architecture.md](docs/architecture.md).
+
+---
+
+## Interactive Project Explorer
+
+Open [docs/interactive/index.html](docs/interactive/index.html) for a static visual guide aimed at recruiters and reviewers. It uses plain HTML/CSS/JS, requires no backend, npm install, or build step, and complements the deeper architecture notes in [docs/architecture.md](docs/architecture.md).
 
 ---
 
@@ -165,6 +113,8 @@ dbt models are organized into staging, intermediate, marts/core, marts/dashboard
 More detail: [docs/dbt_models.md](docs/dbt_models.md).
 
 ### ML and MLOps
+
+![ML and MLOps workflow](docs/diagrams/ml_mLOps_workflow.svg)
 
 The production default remains conservative:
 

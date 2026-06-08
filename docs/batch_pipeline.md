@@ -2,6 +2,8 @@
 
 The batch pipeline collects and prepares crypto-related data for BigQuery/dbt transformations, dashboards, monitoring, and ML training. It is the most mature ingestion path in this repository.
 
+![Batch pipeline](diagrams/batch_pipeline.svg)
+
 ## What It Does
 
 - Collects raw and intermediate data from market, funding, macro, ETF, derivatives, liquidity, and sentiment sources.

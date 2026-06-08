@@ -2,6 +2,8 @@
 
 Kestra orchestrates ingestion, dbt transformations, monitoring, quality checks, ML training, prediction, and PR preview validation. Production-style GKE flows live under `kestra/flows-gke`.
 
+![CI/CD and Kestra gating](diagrams/ci_cd_kestra_gating.svg)
+
 ## Flow Groups
 
 | Group | Path | Purpose |
