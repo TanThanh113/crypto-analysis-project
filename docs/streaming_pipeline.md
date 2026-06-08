@@ -1,59 +1,55 @@
 # Streaming Pipeline
 
-The streaming pipeline is the lower-latency data path for recent crypto market and context signals. It is useful for freshness experiments and future prediction-input automation, but it should be treated as partial/experimental compared with the batch path until operational coverage is stronger.
+## What this part does
 
-![Streaming pipeline](diagrams/streaming_pipeline.svg)
+The streaming pipeline is a lower-latency, freshness-oriented path for market, on-chain, and sentiment signals. It is useful for experiments and future automation, but it is not the trusted full-history path yet.
 
-## What It Does
+The project remains an analytics and ML signal platform, not a trading bot.
 
-- Produces market, on-chain, and sentiment messages.
-- Routes messages through Kafka/Redpanda-compatible topics in local development.
-- Uses Flink-oriented transformation code and sink definitions.
-- Feeds BigQuery sink tables and downstream dbt models such as `stg_streaming_candlestick_1min` and `int_streaming_market_hourly`.
+## Where it lives
 
-## Main Components
+Streaming files live under `local_scripts/streaming`. Producers are under `local_scripts/streaming/producer`, while Flink/Kafka-oriented transformations live under `local_scripts/streaming/logic_crypto_streaming`.
 
-| Path | Purpose |
-| --- | --- |
-| `local_scripts/streaming/producer` | Market, on-chain, and sentiment producers |
-| `local_scripts/streaming/logic_crypto_streaming` | Flink/Kafka-oriented transformation logic |
-| `local_scripts/streaming/scripts` | BigQuery sink specs and deploy helper scripts |
-| `local_scripts/streaming/lib` | Local connector/runtime jars |
-| `local_scripts/streaming/docker-compose.yaml` | Local streaming stack support |
-| `kestra/flows-gke/streaming/the_streaming_hourly_transform_gke.yml` | GKE-oriented streaming transform orchestration |
+## How it fits into the full platform
 
-## Simplified Flow
+Streaming can provide more recent context than batch ingestion, but the current source coverage is partial. Batch remains the strongest historical path for Binance trades, ETF, macro, and funding. Streaming outputs should be validated before they influence automatic prediction workflows.
 
-```mermaid
-flowchart LR
-  Producers["Streaming producers"] --> Topics["Kafka / Redpanda topics"]
-  Topics --> Flink["Flink transformations"]
-  Flink --> BQSinks["BigQuery sinks"]
-  BQSinks --> Staging["stg_streaming_candlestick_1min"]
-  Staging --> Intermediate["int_streaming_market_hourly"]
-  Intermediate --> PredictionInput["mart_ml_prediction_input_latest"]
-```
+Runtime details for Kubernetes/GKE execution belong in [K8s / GKE Runtime](k8s_gke_runtime.md), and orchestration details belong in [Kestra Orchestration](kestra_orchestration.md).
 
-## When To Use Streaming vs Batch
+## Main flow
 
-| Use case | Prefer |
-| --- | --- |
-| Historical training coverage | Batch/backfill |
-| Daily and hourly reliable marts | Batch + dbt |
-| Recent signal freshness experiments | Streaming |
-| Prediction input freshness | Streaming once coverage is reliable |
-| Reproducible model research | Cached BigQuery snapshots/local research artifacts |
+1. Producers emit market, on-chain, and sentiment messages.
+2. Kafka/Redpanda-style infrastructure can move messages between producers and processors.
+3. Flink-oriented logic transforms raw events into freshness signals.
+4. Sink specs prepare selected outputs for BigQuery-like destinations.
+5. Downstream dbt and ML paths should consume streaming data only after freshness and completeness are understood.
 
-## Deploy/Run Notes
+## Important files and folders
 
-- Local streaming uses the files under `local_scripts/streaming`.
-- GKE orchestration is represented in `kestra/flows-gke/streaming`.
-- Do not assume streaming is production-ready just because the flow exists.
-- Validate sink schemas, connector credentials, and freshness before tying streaming output to automatic prediction.
+| Path | Purpose | Notes |
+| --- | --- | --- |
+| `local_scripts/streaming/producer` | Streaming producers | Market, on-chain, and sentiment producers. |
+| `local_scripts/streaming/producer/binance_full_producer.py` | Market producer | Recent market context. |
+| `local_scripts/streaming/producer/onchain_producer.py` | On-chain producer | On-chain context. |
+| `local_scripts/streaming/producer/sentiment_producer.py` | Sentiment producer | Sentiment context. |
+| `local_scripts/streaming/logic_crypto_streaming/main.py` | Transformation entrypoint | Flink-oriented processing entrypoint. |
+| `local_scripts/streaming/logic_crypto_streaming/transformations` | Transformation modules | Order-flow, breakout, liquidation, and related modules. |
+| `local_scripts/streaming/scripts` | Sink specs and helpers | Avoid committing secrets or local key files. |
+| `local_scripts/streaming/docker-compose.yaml` | Local streaming composition | Local-only support, not a deploy guarantee. |
 
-## Known Limitations
+## Production boundary
 
-- Streaming coverage is not yet the trusted full-history path.
-- Some live context sources may be partial.
-- Prediction automation should wait until freshness and completeness are monitored.
-- Streaming jobs can be more operationally sensitive than batch jobs because they rely on topic, connector, sink, and runtime health at the same time.
+Streaming is partial and experimental compared with the batch path. It should not be the sole basis for historical model training coverage or automatic production prediction. Treat sink schemas, source freshness, and dead-letter handling as review points.
+
+## Safety notes
+
+- Do not commit `local_scripts/streaming/producer/.env`, `local_scripts/streaming/secrets`, generated logs, or connector keys.
+- Validate topics, connector settings, sink schemas, and freshness before using streaming outputs downstream.
+- Do not present the streaming path as complete production coverage.
+
+## Read next
+
+- [Batch Pipeline](batch_pipeline.md)
+- [dbt Models](dbt_models.md)
+- [Kestra Orchestration](kestra_orchestration.md)
+- [K8s / GKE Runtime](k8s_gke_runtime.md)

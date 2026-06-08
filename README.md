@@ -10,15 +10,33 @@ This repository demonstrates how raw market, derivatives, liquidity, macro, ETF,
 
 ## Architecture Overview
 
-![High-level project architecture](docs/diagrams/overview_architecture.svg)
-
-Detailed architecture diagrams are in [docs/architecture.md](docs/architecture.md).
+The end-to-end architecture is documented in [docs/architecture.md](docs/architecture.md), with the static [Interactive Project Explorer](docs/interactive/index.html) as the visual reviewer guide.
 
 ---
 
 ## Interactive Project Explorer
 
 Open [docs/interactive/index.html](docs/interactive/index.html) for a static visual guide aimed at recruiters and reviewers. It uses plain HTML/CSS/JS, requires no backend, npm install, or build step, and complements the deeper architecture notes in [docs/architecture.md](docs/architecture.md).
+
+---
+
+## Recommended Reading Path
+
+1. [README.md](README.md)
+2. [docs/architecture.md](docs/architecture.md)
+3. [docs/interactive/index.html](docs/interactive/index.html)
+4. [docs/batch_pipeline.md](docs/batch_pipeline.md)
+5. [docs/streaming_pipeline.md](docs/streaming_pipeline.md)
+6. [docs/dbt_models.md](docs/dbt_models.md)
+7. [docs/ml_mLOps.md](docs/ml_mLOps.md)
+8. [docs/kestra_orchestration.md](docs/kestra_orchestration.md)
+9. [docs/k8s_gke_runtime.md](docs/k8s_gke_runtime.md)
+10. [docs/terraform_infrastructure.md](docs/terraform_infrastructure.md)
+11. [docs/ci_cd_gates.md](docs/ci_cd_gates.md)
+12. [docs/production_boundaries.md](docs/production_boundaries.md)
+13. [docs/repository_map.md](docs/repository_map.md)
+
+This path gives recruiters a quick guided tour and gives technical reviewers a way to go deeper subsystem by subsystem.
 
 ---
 
@@ -113,8 +131,6 @@ dbt models are organized into staging, intermediate, marts/core, marts/dashboard
 More detail: [docs/dbt_models.md](docs/dbt_models.md).
 
 ### ML and MLOps
-
-![ML and MLOps workflow](docs/diagrams/ml_mLOps_workflow.svg)
 
 The production default remains conservative:
 

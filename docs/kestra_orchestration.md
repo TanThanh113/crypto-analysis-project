@@ -1,93 +1,58 @@
 # Kestra Orchestration
 
-Kestra orchestrates ingestion, dbt transformations, monitoring, quality checks, ML training, prediction, and PR preview validation. Production-style GKE flows live under `kestra/flows-gke`.
+## What this part does
 
-![CI/CD and Kestra gating](diagrams/ci_cd_kestra_gating.svg)
+Kestra organizes platform workflows into flow groups. It describes when and how raw ingestion, dbt transforms, ML jobs, streaming transforms, monitoring, quality checks, preview validation, and master overview flows should run.
 
-## Flow Groups
+This page focuses on orchestration logic. Kubernetes/GKE runtime details live in [K8s / GKE Runtime](k8s_gke_runtime.md).
 
-| Group | Path | Purpose |
+## Where it lives
+
+Production-style flow definitions live under `kestra/flows-gke`. Legacy/local flow definitions also exist under `kestra/flows`.
+
+## How it fits into the full platform
+
+Kestra connects subsystem work without embedding business logic in CI/CD. It can orchestrate batch ingestion, dbt transformations, ML training/prediction, monitoring, and quality checks. GKE runtime execution and Helm/Kubernetes details are separate runtime concerns.
+
+## Main flow
+
+1. Raw flows run batch snapshots and intraday refreshes.
+2. dbt flows run hourly, intraday, daily market, macro, and ETF transforms.
+3. ML flows run training, prediction, and strategy matrix workflows only when intentionally enabled.
+4. Streaming flows can orchestrate streaming transforms.
+5. Monitoring and quality flows check freshness and quality.
+6. Preview flows validate PR changes without production triggers.
+7. Master flows summarize the broader platform orchestration.
+
+## Important files and folders
+
+| Path | Purpose | Notes |
 | --- | --- | --- |
-| Raw | `kestra/flows-gke/raw` | Batch ingestion snapshots and intraday/hourly raw refreshes |
-| dbt | `kestra/flows-gke/dbt` | dbt daily, hourly, intraday, macro, market, and ETF transforms |
-| ML | `kestra/flows-gke/ml` | ML training, prediction, and manual strategy matrix training |
-| Streaming | `kestra/flows-gke/streaming` | Streaming hourly transform orchestration |
-| Monitoring | `kestra/flows-gke/monitoring` | Pipeline health checks |
-| Quality | `kestra/flows-gke/quality` | Great Expectations quality audit |
-| Preview | `kestra/flows-gke/preview` | Safe PR validation flows |
-| Master | `kestra/flows-gke/master` | Pipeline overview/master flow |
+| `kestra/flows-gke/raw` | Raw ingestion flows | Batch snapshots and intraday refresh. |
+| `kestra/flows-gke/dbt` | dbt flows | Hourly, intraday, daily market, macro, and ETF transforms. |
+| `kestra/flows-gke/ml` | ML flows | Training, prediction, and strategy matrix flows. |
+| `kestra/flows-gke/streaming` | Streaming flow | Streaming transform orchestration. |
+| `kestra/flows-gke/monitoring` | Monitoring flows | Pipeline health checks. |
+| `kestra/flows-gke/quality` | Quality flows | Great Expectations-style quality audit. |
+| `kestra/flows-gke/preview` | PR preview flows | Validation-only flows without production triggers. |
+| `kestra/flows-gke/master` | Master overview flow | High-level orchestration overview. |
+| `.github/scripts/kestra_deploy_plan.py` | Deploy planning | Decides which flow groups are deployable. |
+| `.github/scripts/deploy_kestra_flows.py` | Flow deploy helper | Deploys selected flows when gates allow it. |
 
-Legacy/local Kestra flows also exist under `kestra/flows`.
+## Production boundary
 
-## ML Deploy Gate
+Kestra orchestration can trigger production-style work, so flow triggers, namespaces, images, and destinations must be reviewed carefully. ML flow deployment remains gated separately. PR preview flows should not gain production triggers.
 
-ML flows are gated by:
+## Safety notes
 
-```text
-ENABLE_ML_KESTRA_DEPLOY
-```
+- Do not deploy Kestra/GKE flows just to make checks green.
+- Do not enable ML deploy casually.
+- Do not put secrets, keys, or local credentials into flow YAML.
+- Runtime failures can come from infrastructure dependencies such as Cloud SQL or identity bindings; see [K8s / GKE Runtime](k8s_gke_runtime.md).
 
-Default behavior on Pull Requests is conservative:
+## Read next
 
-- Batch/dbt/non-ML flows can still deploy when they are deployable.
-- ML flows are skipped unless the ML deploy flag is explicitly enabled in the appropriate workflow context.
-- PRs with only skipped ML flows should not require a live Kestra server or Cloud SQL dependency.
-
-## PR Deploy Plan
-
-The workflow computes a deploy plan before GCP auth, GKE credentials, port-forward, or flow deploy.
-
-Important outputs:
-
-- `has_non_ml_flows_to_deploy`
-- `has_ml_flows_to_deploy`
-- `should_deploy_ml_flows`
-- `has_any_flows_to_deploy`
-- `has_docker_relevant_changes`
-- `should_build_docker`
-
-If `has_any_flows_to_deploy=false`, Kestra port-forward/deploy is skipped.
-
-## Docker Build Gate
-
-Docker build/smoke checks run only when they are useful:
-
-- Docker/runtime/dependency files changed, or
-- there are deployable Kestra flows after ML gating.
-
-If neither condition is true, the workflow logs:
-
-```text
-Skipping Docker build: no Docker/runtime changes and no deployable Kestra flows.
-```
-
-This keeps PR validation cheaper without disabling pytest, repo guard, or diff checks.
-
-## Cloud SQL and GKE Dependency
-
-Kestra production deployment depends on GKE and the Kestra webserver being reachable. Kestra metadata/state is backed by Cloud SQL PostgreSQL in the production-style architecture. If the webserver is not reachable, check Kubernetes and database connectivity before retrying deploy.
-
-## Debug Commands
-
-Use these only when intentionally debugging a live cluster:
-
-```bash
-kubectl get pods -n kestra
-kubectl logs -n kestra deployment/kestra-webserver
-kubectl port-forward -n kestra deployment/kestra-webserver 8080:8080
-```
-
-Common failure areas:
-
-- GKE credentials or Workload Identity are not configured.
-- Kestra webserver is not ready.
-- Cloud SQL connectivity is broken.
-- Port-forward is attempted even though no deployable flows exist.
-- Flow deploy includes ML flows while ML infrastructure is intentionally disabled.
-
-## Safety Notes
-
-- Do not enable ML deploy just to make PR checks green.
-- Keep batch/dbt deploy independent from the ML flag.
-- Do not add triggers to PR preview flows.
-- Do not run full production flows in preview namespaces unless outputs are isolated.
+- [K8s / GKE Runtime](k8s_gke_runtime.md)
+- [CI/CD Gates](ci_cd_gates.md)
+- [Batch Pipeline](batch_pipeline.md)
+- [ML and MLOps](ml_mLOps.md)

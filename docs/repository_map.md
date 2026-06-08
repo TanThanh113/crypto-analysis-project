@@ -1,112 +1,94 @@
 # Repository Map
 
-This map groups the repository by function so reviewers can understand where to look and what to edit carefully.
+## What this part does
 
-## Batch Ingestion
+This document groups the repository by subsystem so a new reviewer can understand where to look, what each area does, and what to edit carefully.
 
-| Path | Purpose | Edit carefully |
-| --- | --- | --- |
-| `local_scripts/batch` | Batch collectors, loaders, validators, health checks, alerting, quality audit | Source-specific collectors and cloud writes can affect cost and data quality |
-| `local_scripts/batch/backfill` | Historical backfill scripts | Backfills can be expensive and should be run intentionally |
-| `local_scripts/batch/common` | Shared BigQuery/io helpers | Changes can affect many collectors |
+## Where it lives
 
-## Streaming
+This is a documentation guide for the full repository. It intentionally avoids exposing secrets, local credentials, generated artifacts, Terraform state, and local outputs as actionable paths.
 
-| Path | Purpose | Edit carefully |
-| --- | --- | --- |
-| `local_scripts/streaming/producer` | Local market/on-chain/sentiment producers | Live source assumptions and credentials |
-| `local_scripts/streaming/logic_crypto_streaming` | Flink/Kafka-oriented transformation code | Sink schema and timestamp alignment |
-| `local_scripts/streaming/scripts` | Sink specs and deployment helpers | Avoid committing secrets or local key files |
+## How it fits into the full platform
 
-## Orchestration
+The repository combines data ingestion, transformations, orchestration, runtime infrastructure, infrastructure-as-code, ML, CI/CD, and documentation. The map below helps reviewers move from high-level docs into the relevant subsystem.
 
-| Path | Purpose | Edit carefully |
-| --- | --- | --- |
-| `kestra/flows-gke` | GKE-oriented production/preview Kestra flows | Flow triggers, namespaces, images, and cloud outputs |
-| `kestra/flows` | Legacy/local Kestra flows | Keep behavior aligned if still referenced |
-| `.github/scripts/deploy_kestra_flows.py` | Flow deployment helper | Deploy filtering and namespace behavior |
-| `.github/scripts/kestra_deploy_plan.py` | PR deploy/build planning | CI gates and skip behavior |
+## Main flow
 
-## dbt Transformations
+1. Start with Documentation.
+2. Review Batch and Streaming ingestion.
+3. Review dbt transforms and ML/MLOps.
+4. Review Kestra orchestration and K8s/GKE runtime.
+5. Review Terraform infrastructure and Docker images.
+6. Review CI/CD, tests, research-only tooling, and generated artifacts to avoid.
 
-| Path | Purpose | Edit carefully |
-| --- | --- | --- |
-| `dbt_transform/crypto_dbt/models/staging` | Source normalization | Source schema changes |
-| `dbt_transform/crypto_dbt/models/intermediate` | Aggregation and feature preparation | Time alignment and joins |
-| `dbt_transform/crypto_dbt/models/marts/core` | Shared facts and dimensions | Downstream dashboard/ML dependencies |
-| `dbt_transform/crypto_dbt/models/marts/dashboard` | BI-ready marts | Dashboard contracts |
-| `dbt_transform/crypto_dbt/models/marts/ml` | ML features, labels, training, prediction, metrics | Label leakage and feature contract compatibility |
-| `dbt_transform/crypto_dbt/models/marts/monitoring` | Pipeline health and audit marts | Operational alert semantics |
+## Important files and folders
 
-## ML Training and Prediction
+| Group | Path | Purpose | Type | Caution |
+| --- | --- | --- | --- | --- |
+| Documentation | `README.md` | Portfolio overview and reading path | Docs | Keep scope accurate; not a trading bot. |
+| Documentation | `docs/interactive/index.html` | Static project explorer | Docs | No backend or build step. |
+| Documentation | `docs/architecture.md` | Architecture guide | Docs | Keep links relative and valid. |
+| Documentation | `docs/*_pipeline.md`, `docs/*models.md`, `docs/*orchestration.md` | Subsystem docs | Docs | Avoid claims of complete production maturity. |
+| Batch ingestion | `local_scripts/batch` | Collectors, validation, monitoring, quality audit | Runtime | Cloud writes and source assumptions can affect cost/data quality. |
+| Batch ingestion | `local_scripts/batch/backfill` | Historical loaders | Runtime | Do not run casually. |
+| Batch ingestion | `local_scripts/batch/validation/rulesets` | YAML validation rules | Runtime | Keep source-specific expectations accurate. |
+| Streaming | `local_scripts/streaming/producer` | Market/on-chain/sentiment producers | Runtime/experimental | Avoid committing `.env` or keys. |
+| Streaming | `local_scripts/streaming/logic_crypto_streaming` | Flink/Kafka-oriented logic | Runtime/experimental | Sink schema and freshness need validation. |
+| Streaming | `local_scripts/streaming/scripts` | Sink specs and helper scripts | Runtime/config | Do not commit secrets or connector keys. |
+| dbt transforms | `dbt_transform/crypto_dbt/models/staging` | Source normalization | Runtime | Source schema changes affect downstream layers. |
+| dbt transforms | `dbt_transform/crypto_dbt/models/intermediate` | Time alignment and aggregation | Runtime | Watch joins, timestamp logic, and leakage. |
+| dbt transforms | `dbt_transform/crypto_dbt/models/marts/core` | Reusable analytics facts | Runtime | Downstream dependency surface. |
+| dbt transforms | `dbt_transform/crypto_dbt/models/marts/dashboard` | BI-ready marts | Runtime | Dashboard contract changes should be intentional. |
+| dbt transforms | `dbt_transform/crypto_dbt/models/marts/ml` | ML datasets, inputs, metrics | Runtime/ML | Protect feature contract and label logic. |
+| dbt transforms | `dbt_transform/crypto_dbt/models/marts/monitoring` | Freshness and quality marts | Runtime/monitoring | Alert semantics matter. |
+| ML and MLOps | `ml/train_model.py` | Training entrypoint | Runtime/ML | Can write artifacts when configured. |
+| ML and MLOps | `ml/predict_latest.py` | Prediction entrypoint | Runtime/ML | Artifact/registry loading boundary. |
+| ML and MLOps | `ml/feature_list.yml` | Production feature contract | Runtime/ML | Do not change casually. |
+| ML and MLOps | `ml/mlflow_utils.py`, `ml/mlflow_registry.py`, `ml/optuna_tuning.py` | Optional MLOps helpers | Optional/ML | Off unless explicitly configured. |
+| Kestra orchestration | `kestra/flows-gke` | Production-style flow definitions | Runtime/orchestration | Triggers, namespaces, images, and destinations need review. |
+| Kestra orchestration | `kestra/flows` | Local/legacy flow definitions | Runtime/orchestration | Keep aligned only if still referenced. |
+| K8s / GKE runtime | `k8s` | Kubernetes support manifests | Infra/runtime | No secrets or key material. |
+| K8s / GKE runtime | `helm/kestra/values-gke.yaml` | Kestra Helm values | Infra/runtime | Cloud SQL, identity, and secrets dependencies matter. |
+| K8s / GKE runtime | `docker` | Runtime Dockerfiles | Runtime | Builds should stay gated. |
+| Terraform infrastructure | `terraform` | Main GCP resources | Infra | Never commit state, secret tfvars, or credentials. |
+| Terraform infrastructure | `terraform-bootstrap` | Bootstrap IAM/service-account setup | Infra | IAM changes can affect access. |
+| Terraform infrastructure | `terraform-grafana` | Grafana-related infrastructure | Infra | Provider/config changes can affect dashboards. |
+| Docker images | `docker/batch.Dockerfile` | Batch runtime image | Runtime | Build only when gated. |
+| Docker images | `docker/dbt.Dockerfile` | dbt runtime image | Runtime | Build only when gated. |
+| Docker images | `docker/ml.Dockerfile` | ML runtime image | Runtime/ML | Build only when gated. |
+| CI/CD | `.github/workflows` | GitHub Actions workflows | CI/CD | Do not loosen gates casually. |
+| CI/CD | `.github/scripts` | CI helper scripts | CI/CD | Deploy planning affects runtime behavior. |
+| CI/CD | `scripts/repo_guard.py` | Repository guard | CI/CD | Keep safety checks intact. |
+| Tests | `ml/tests` | ML tests | Tests | Keep cloud-free. |
+| Tests | `dbt_transform/crypto_dbt/tests` | dbt tests folder | Tests | Avoid generated target artifacts. |
+| Research-only tooling | `ml/local_*.py` | Local diagnostics, AutoML, ablation, keeper validation | Research | Keep local and manual. |
+| Research-only tooling | `ml/research/configs` | Research feature configs | Research | Do not confuse with `ml/feature_list.yml`. |
 
-| Path | Purpose | Edit carefully |
-| --- | --- | --- |
-| `ml/train_model.py` | Training entrypoint | BigQuery writes, GCS artifacts, promotion, optional MLflow/Registry |
-| `ml/predict_latest.py` | Prediction entrypoint | Prediction schema and artifact/registry loading |
-| `ml/feature_list.yml` | Production feature contract | Do not casually enable research features |
-| `ml/model_loader.py` | Artifact/registry loading | Fallback behavior |
+## Local/generated artifacts to avoid committing
 
-## MLOps Utilities
-
-| Path | Purpose | Edit carefully |
-| --- | --- | --- |
-| `ml/mlflow_utils.py` | Optional MLflow experiment logging | Must remain best-effort unless fail-on-error is explicit |
-| `ml/mlflow_registry.py` | Optional registry integration | Avoid deprecated stages and accidental remote updates |
-| `ml/optuna_tuning.py` | Optional tuning | Do not tune on test set |
-| `ml/promotion_gate.py` | Candidate promotion controls | Keep conservative defaults |
-| `ml/strategy_config.py` | Strategy matrix definitions | Backward compatibility with `--model-choice auto` |
-| `ml/time_split.py` | Time-series split helpers | Anti-leakage behavior |
-
-## Local Research Tools
-
-| Path | Purpose | Edit carefully |
-| --- | --- | --- |
-| `ml/local_*.py` | Local AutoML, diagnostics, ablation, keeper validation, readiness review | Keep artifacts local and avoid production writes |
-| `ml/research/configs` | Research-only feature contracts | Do not confuse with production `feature_list.yml` |
-| `ml/tests` | Cloud-free tests for ML utilities and research tooling | Keep tests isolated from GCS/BigQuery writes |
-
-## Infrastructure
-
-| Path | Purpose | Edit carefully |
-| --- | --- | --- |
-| `terraform` | Main GCP infrastructure | State, IAM, datasets, buckets, GKE, Cloud SQL |
-| `terraform-bootstrap` | Bootstrap setup | IAM/service account changes |
-| `terraform-grafana` | Grafana-related infrastructure | Dashboard/provider config |
-| `helm` and `k8s` | Kestra runtime support | Runtime services and namespaces |
-
-## CI/CD
-
-| Path | Purpose | Edit carefully |
-| --- | --- | --- |
-| `.github/workflows/quality-check.yml` | Main quality/test checks | Required validation coverage |
-| `.github/workflows/docker-build-push.yml` | Docker build/smoke/push workflow | Build gates and cloud auth |
-| `.github/workflows/kestra-deploy-gke.yml` | Kestra deploy workflow | Port-forward/deploy gating |
-| `.github/workflows/pr-required-gate.yml` | Required-check aggregation | Required/skipped check semantics |
-
-## Docker Images
-
-| Path | Purpose |
+| Path pattern | Why to avoid it |
 | --- | --- |
-| `docker/batch.Dockerfile` | Production batch image |
-| `docker/dbt.Dockerfile` | Production dbt image |
-| `docker/ml.Dockerfile` | Production ML image |
+| `.env` files | May contain credentials or local config. |
+| `local_scripts/streaming/secrets` | May contain connector keys or secret material. |
+| `terraform/*.tfstate`, `terraform*/*.tfvars` | State and tfvars can expose resource state or secrets. |
+| `dbt_transform/crypto_dbt/target`, `dbt_transform/crypto_dbt/logs` | Generated dbt artifacts and logs. |
+| `ml/artifacts`, `ml/.venv`, `ml/__pycache__`, `ml/.pytest_cache` | Local artifacts, environments, caches, and generated files. |
+| `local_scripts/**/__pycache__`, `local_scripts/streaming/logs` | Generated caches and logs. |
 
-## Tests and Guards
+## Production boundary
 
-| Path | Purpose |
-| --- | --- |
-| `ml/tests` | ML utility and local research tests |
-| `scripts/repo_guard.py` | Production repository guard |
-| `dbt_transform/crypto_dbt/tests` | dbt test folder |
+The repo demonstrates production-style architecture and conservative production defaults. It is not automated trading infrastructure. Research-only tooling, optional MLOps, partial streaming coverage, and experimental data sources should stay clearly separated from production defaults.
 
-## Documentation
+## Safety notes
 
-| Path | Purpose |
-| --- | --- |
-| `README.md` | Portfolio-level overview |
-| `docs/architecture.md` | Architecture diagrams and flow descriptions |
-| `docs/interactive/index.html` | Static interactive project explorer for recruiters and reviewers |
-| `docs/diagrams` | Exported SVG diagrams and editable Mermaid source files |
-| `docs/*_pipeline.md`, `docs/*models.md`, `docs/*orchestration.md` | Module-specific documentation |
-| `docs/runbook.md`, `docs/production-runbook.md` | Operational runbooks |
+- Do not run backfills, training, deploys, Docker builds, dbt cloud builds, or Terraform apply for docs-only work.
+- Do not commit secrets, state, keys, local credentials, generated artifacts, or local output data.
+- Treat GCS, BigQuery, Registry, GKE, Cloud SQL, and Terraform actions as intentional cloud operations.
+
+## Read next
+
+- [Architecture](architecture.md)
+- [K8s / GKE Runtime](k8s_gke_runtime.md)
+- [Terraform Infrastructure](terraform_infrastructure.md)
+- [CI/CD Gates](ci_cd_gates.md)
+- [Production Boundaries](production_boundaries.md)

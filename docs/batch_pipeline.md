@@ -1,78 +1,57 @@
 # Batch Pipeline
 
-The batch pipeline collects and prepares crypto-related data for BigQuery/dbt transformations, dashboards, monitoring, and ML training. It is the most mature ingestion path in this repository.
+## What this part does
 
-![Batch pipeline](diagrams/batch_pipeline.svg)
+The batch pipeline is the most mature historical data path in the project. It collects trusted sources, supports selected backfills, validates outputs, and prepares data for dbt models, dashboards, monitoring, and ML datasets.
 
-## What It Does
+This is not a trading bot. Batch data supports analytics and ML signal research.
 
-- Collects raw and intermediate data from market, funding, macro, ETF, derivatives, liquidity, and sentiment sources.
-- Supports daily snapshots, hourly snapshots, intraday shifts, and selected backfill loaders.
-- Writes local files, GCS/parquet outputs, Iceberg/BigLake-oriented data, or BigQuery tables depending on the script and Kestra flow.
-- Runs validation, quality audit, monitoring, and alerting utilities.
+## Where it lives
 
-## Main Source Groups
+Batch code lives mainly under `local_scripts/batch`, with validation rules, quality audit specs, monitoring utilities, and backfill scripts grouped into subfolders.
 
-| Source group | Example files | Coverage status |
+## How it fits into the full platform
+
+Batch ingestion feeds the storage and warehouse layers that dbt transforms into marts. Those marts later support dashboards, monitoring, and ML training/prediction inputs. The trusted 5-year backfill coverage is currently strongest for Binance trades, ETF indicators, macro indicators, and funding data. Other sources remain partial, experimental, or not fully live-ready.
+
+## Main flow
+
+1. Main collectors gather source data for market, ETF, macro, funding, and other source areas.
+2. Backfill scripts load selected historical windows when explicitly requested.
+3. Validation rules and quality specs check schema, freshness, and expected values.
+4. Curated data is prepared for storage/warehouse use.
+5. dbt models transform data into analytics and ML marts.
+6. Monitoring and quality audit paths help reviewers understand data health.
+
+## Important files and folders
+
+| Path | Purpose | Notes |
 | --- | --- | --- |
-| Binance trades | `binance_trade_collector.py`, `backfill/binance_backfill_raw_trades_to_hourly_int_daily_window.py` | Reliable core backfill path |
-| Funding | `funding_basis_collector.py`, `backfill/binance_backfill_funding_to_int.py` | Reliable core backfill path |
-| ETF | `alpha_vantage_option/etf_flows_collector.py`, Tiingo backfill helpers | Reliable core backfill path |
-| Macro | `alpha_vantage_option/macro_extractor.py`, Tiingo backfill helpers | Reliable core backfill path |
-| Options/liquidation | `deribit_options_collector.py`, `liquidation_heatmap.py` | Partial or source-dependent |
-| Stablecoin/reserve | `stablecoin_supply_collector.py`, `exchange_reserves_collector.py` | Partial or source-dependent |
-| Sentiment | `reddit_sentiment.py`, `telegram_sentiment.py` | Partial or source-dependent |
+| `local_scripts/batch` | Main collectors | Includes trusted and experimental source collectors. |
+| `local_scripts/batch/binance_trade_collector.py` | Binance trade collector | Part of strongest reliable historical coverage. |
+| `local_scripts/batch/funding_basis_collector.py` | Funding collector | Part of strongest reliable historical coverage. |
+| `local_scripts/batch/alpha_vantage_option/etf_flows_collector.py` | ETF collector | Part of strongest reliable historical coverage. |
+| `local_scripts/batch/alpha_vantage_option/macro_extractor.py` | Macro extractor | Part of strongest reliable historical coverage. |
+| `local_scripts/batch/backfill` | Backfill scripts | Run intentionally only; can trigger cloud writes depending on script/config. |
+| `local_scripts/batch/validation` | Validation engine | Includes rules, IO, engine, and rulesets. |
+| `local_scripts/batch/validation/rulesets` | YAML validation rules | Source-specific validation rules. |
+| `local_scripts/batch/quality_audit/specs` | Quality audit specs | Dashboard, ML, and freshness checks. |
+| `local_scripts/batch/iceberg_loader.py` | Iceberg / BigLake path | Lakehouse-oriented loader path. |
 
-The most trusted 5-year backfill currently centers on Binance trades, ETF, Macro, and Funding.
+## Production boundary
 
-## Important Folders
+Batch ingestion is the strongest source path, but it is not automatically safe to run in every environment. Backfills and loaders can write to GCS or BigQuery when configured. Partial sources such as options, liquidation, stablecoin, exchange reserves, and sentiment should not be presented as equally reliable.
 
-| Path | Purpose |
-| --- | --- |
-| `local_scripts/batch` | Main batch collectors and utility modules |
-| `local_scripts/batch/backfill` | Backfill-specific scripts |
-| `local_scripts/batch/common` | Shared BigQuery/io helpers |
-| `local_scripts/batch/validation` | Validation engine and rules |
-| `local_scripts/batch/quality_audit` | Great Expectations-oriented audit utilities |
-| `local_scripts/batch/monitoring` | Pipeline health checks |
-| `local_scripts/batch/alerting` | Slack alert support |
-| `kestra/flows-gke/raw` | GKE raw ingestion flows |
-| `kestra/flows-gke/monitoring` | Health-check orchestration |
-| `kestra/flows-gke/quality` | Quality/audit orchestration |
+## Safety notes
 
-## Backfill vs Daily Snapshot
+- Do not run backfills casually.
+- Do not commit `local_scripts/batch/.env`, service account keys, local output data, logs, or generated caches.
+- Review cost and destination configuration before running cloud-connected loaders.
+- Documentation updates should not trigger GCS, BigQuery, or Registry writes.
 
-| Mode | Purpose | Typical behavior |
-| --- | --- | --- |
-| Backfill | Rebuild historical coverage over larger windows | Reads historical source ranges and loads intermediate or raw tables |
-| Daily snapshot | Keep current source data fresh | Runs smaller scheduled extracts through Kestra |
-| Hourly/intraday | Refresh near-current tables | Feeds more frequent mart updates and prediction readiness |
+## Read next
 
-Backfill scripts should be run intentionally because they can read/write large volumes and incur cloud cost.
-
-## Output Patterns
-
-- Local development outputs may land under local output folders.
-- Production-style ingestion can write to GCS, BigLake/Iceberg, or BigQuery.
-- dbt consumes BigQuery raw/external/staging inputs and builds curated marts.
-- Monitoring scripts write operational summaries when cloud targets are configured.
-
-## Local Run and Debug Notes
-
-Use a local virtual environment and dry or isolated output paths whenever possible. Do not run cloud write paths without explicitly configured project, dataset, bucket, and credentials.
-
-Useful debug checks:
-
-```bash
-cd /home/thanh/crypto-analysis-project
-python scripts/repo_guard.py
-```
-
-For individual collectors, inspect the script arguments and environment variables before running. Avoid committing `.env`, local output data, service account keys, or generated parquet files.
-
-## Known Limitations
-
-- Source coverage is uneven outside the trusted Binance/ETF/Macro/Funding backfill set.
-- Some sources depend on third-party availability, rate limits, or incomplete historical APIs.
-- Sentiment and liquidation-style inputs may be useful analytically but should not be assumed live-ready.
-- Backfill quality should be verified through dbt tests, freshness checks, and monitoring marts.
+- [Architecture](architecture.md)
+- [dbt Models](dbt_models.md)
+- [Kestra Orchestration](kestra_orchestration.md)
+- [K8s / GKE Runtime](k8s_gke_runtime.md)

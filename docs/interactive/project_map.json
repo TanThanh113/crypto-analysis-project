@@ -9,7 +9,9 @@
       "The page is documentation-only and does not run ingestion, training, deployment, or cloud writes.",
       "MLflow, Optuna, and MLflow Registry are optional and off by default.",
       "subset9 and microstructure features are research/manual candidates, not production defaults."
-    ]
+    ],
+    "github_repo_url": "https://github.com/TanThanh113/crypto-analysis-project",
+    "github_branch": "main"
   },
   "coverage": {
     "summary": "Reliable 5-year backfill coverage is currently strongest for Binance trades, ETF indicators, macro indicators, and funding data. Other sources are partial, experimental, or not fully live-ready.",
@@ -31,10 +33,10 @@
   "tabs": [
     {
       "id": "overview",
-      "label": "Overview",
-      "eyebrow": "Portfolio view",
-      "title": "End-to-end crypto analytics and conservative ML signal platform",
-      "summary": "The project demonstrates batch ingestion, experimental streaming, BigQuery/dbt modeling, Kestra orchestration, Terraform-managed cloud infrastructure, Dockerized runtimes, monitoring marts, and conservative ML signal workflows.",
+      "label": "Platform Overview",
+      "eyebrow": "Project at a glance",
+      "title": "Platform Overview",
+      "summary": "Guided view of how batch and streaming ingestion, dbt, orchestration, runtime infrastructure, CI/CD, and conservative ML signal workflows fit together.",
       "badges": [
         "Analytics platform",
         "ML signal research",
@@ -42,56 +44,59 @@
         "Cloud-native design"
       ],
       "flow": [
-        "External data sources",
-        "Batch and streaming ingestion",
-        "GCS / BigLake / BigQuery",
-        "dbt marts",
-        "ML training and prediction",
-        "Monitoring and dashboards"
+        "External Sources",
+        "Batch + Streaming",
+        "GCS / BigQuery",
+        "dbt Marts",
+        "ML Signals",
+        "Monitoring"
       ],
       "cards": [
         {
-          "title": "What reviewers should notice",
-          "body": "The repository ties together data engineering, analytics modeling, orchestration, MLOps controls, and CI/CD gates while documenting source-coverage limits explicitly."
+          "title": "End-to-End Scope",
+          "body": "Ingestion, dbt marts, orchestration, MLOps controls, monitoring, CI/CD, and deployment gates are connected in one repo."
         },
         {
-          "title": "Production boundary",
-          "body": "The default ML contract remains conservative. Research scripts and feature candidates are separated from production entrypoints and are not auto-promoted."
+          "title": "Conservative Runtime",
+          "body": "Production prediction is artifact-first. Registry, Optuna, and research candidates stay opt-in."
         },
         {
-          "title": "Current data confidence",
-          "body": "The strongest historical coverage is Binance trades, ETF, macro, and funding. Other feeds can be useful analytically but should be treated as partial or experimental."
+          "title": "Explicit Data Coverage",
+          "body": "Best historical confidence: Binance trades, ETF, macro, and funding. Other feeds are partial."
         }
       ],
       "important_files": [
         {
           "path": "README.md",
-          "label": "Portfolio overview",
-          "note": "Top-level project summary and safety notes."
+          "label": "Project Overview",
+          "note": "Top-level project summary and safety notes.",
+          "tag": "Docs"
         },
         {
           "path": "docs/architecture.md",
-          "label": "Architecture guide",
-          "note": "End-to-end platform architecture and operational boundaries."
+          "label": "Architecture Guide",
+          "note": "End-to-end platform architecture and operational boundaries.",
+          "tag": "Docs"
         },
         {
           "path": "docs/repository_map.md",
-          "label": "Repository map",
-          "note": "Folder-by-folder reviewer guide."
+          "label": "Repository Map",
+          "note": "Folder-by-folder reviewer guide.",
+          "tag": "Docs"
         }
       ],
       "docs": [
         {
+          "path": "README.md",
+          "label": "Project README",
+          "note": "Portfolio-level summary and reading path.",
+          "tag": "Docs"
+        },
+        {
           "path": "docs/architecture.md",
-          "label": "Architecture docs"
-        },
-        {
-          "path": "docs/repository_map.md",
-          "label": "Repository map"
-        },
-        {
-          "path": "docs/production-runbook.md",
-          "label": "Production runbook"
+          "label": "Architecture Docs",
+          "note": "End-to-end platform architecture and boundaries.",
+          "tag": "Docs"
         }
       ],
       "diagram": {
@@ -107,77 +112,75 @@
     },
     {
       "id": "batch",
-      "label": "Batch",
+      "label": "Batch Ingestion",
       "eyebrow": "Most mature ingestion path",
-      "title": "Batch collectors, backfills, validation, and cloud landing tables",
-      "summary": "Batch ingestion is the trusted historical path for this project. It supports collectors, selected 5-year backfills, quality checks, monitoring, and downstream dbt/ML preparation.",
+      "title": "Batch Ingestion and Trusted Backfills",
+      "summary": "Most mature ingestion path for trusted collectors, selected historical backfills, validation, and downstream analytics/ML preparation.",
       "badges": [
         "Backfill-aware",
         "Validation utilities",
         "Cloud writes only when configured"
       ],
       "flow": [
-        "Collectors",
-        "Backfill or snapshot mode",
-        "Validation and quality audit",
-        "GCS / BigQuery landing",
-        "dbt transformations",
-        "Dashboard and ML marts"
+        "Trusted Sources",
+        "Main Collectors",
+        "Validation Rules",
+        "Raw / Curated Landing",
+        "dbt Models",
+        "Dashboards / ML"
       ],
       "cards": [
         {
-          "title": "Strongest sources",
-          "body": "Binance trades, ETF indicators, macro indicators, and funding data are the most reliable 5-year backfill set."
+          "title": "Trusted Five-Year Coverage",
+          "body": "Reliable 5-year backfill is strongest for Binance trades, ETF indicators, macro indicators, and funding data."
         },
         {
-          "title": "Partial sources",
-          "body": "Options, liquidation, stablecoin, exchange reserve, and sentiment feeds are useful but source-dependent and not uniformly live-ready."
+          "title": "Backfill Discipline",
+          "body": "Historical loaders can be expensive and may write to cloud targets, so they should run only when intentionally configured."
         },
         {
-          "title": "Operational caution",
-          "body": "Backfills can read and write large volumes, so they should only run with intentional cloud targets and cost expectations."
+          "title": "Validation Before Modeling",
+          "body": "Rule-based validation and quality audit paths help catch schema, freshness, and data-quality issues before dbt and ML consume the data."
         }
       ],
       "important_files": [
         {
-          "path": "local_scripts/batch/binance_trade_collector.py",
-          "label": "Binance trade collector",
-          "note": "Core market trade collection."
-        },
-        {
-          "path": "local_scripts/batch/funding_basis_collector.py",
-          "label": "Funding collector",
-          "note": "Funding and derivatives context."
-        },
-        {
-          "path": "local_scripts/batch/alpha_vantage_option/etf_flows_collector.py",
-          "label": "ETF collector",
-          "note": "ETF-related indicators."
-        },
-        {
-          "path": "local_scripts/batch/alpha_vantage_option/macro_extractor.py",
-          "label": "Macro extractor",
-          "note": "Macro indicator extraction."
+          "path": "local_scripts/batch",
+          "label": "Main Collectors",
+          "note": "Collectors for trusted and experimental batch sources.",
+          "tag": "Pipeline"
         },
         {
           "path": "local_scripts/batch/backfill",
-          "label": "Backfill scripts",
-          "note": "Historical loaders for selected trusted sources."
+          "label": "Backfill Scripts",
+          "note": "Historical loaders for selected trusted sources.",
+          "tag": "Pipeline"
         },
         {
           "path": "local_scripts/batch/validation",
-          "label": "Validation engine",
-          "note": "Reusable rules and validation IO."
+          "label": "Validation Rules",
+          "note": "Validation engine and YAML rulesets.",
+          "tag": "Validation"
+        },
+        {
+          "path": "local_scripts/batch/quality_audit/specs",
+          "label": "Quality Audit Specs",
+          "note": "Great Expectations-style specs for dashboard, ML, and freshness checks.",
+          "tag": "Validation"
+        },
+        {
+          "path": "local_scripts/batch/iceberg_loader.py",
+          "label": "Iceberg / BigLake Path",
+          "note": "Lakehouse-oriented loader path for curated storage workflows.",
+          "tag": "Iceberg"
         }
       ],
       "docs": [
         {
           "path": "docs/batch_pipeline.md",
-          "label": "Batch pipeline docs"
-        },
-        {
-          "path": "docs/runbook.md",
-          "label": "Runbook"
+          "label": "Batch Pipeline Docs",
+          "note": "Beginner-friendly guide to collectors, backfills, validation, and safety.",
+          "tag": "Docs"
         }
       ],
       "diagram": {
@@ -193,68 +196,68 @@
     },
     {
       "id": "streaming",
-      "label": "Streaming",
+      "label": "Streaming Pipeline",
       "eyebrow": "Lower-latency path",
-      "title": "Experimental streaming producers, Flink logic, and BigQuery sink preparation",
-      "summary": "Streaming supports freshness experiments and future prediction-input automation, but it is not the primary trusted full-history path yet.",
+      "title": "Streaming Pipeline and Freshness Path",
+      "summary": "Lower-latency producer and Flink/Kafka-oriented transformation area for freshness experiments; still partial compared with trusted batch coverage.",
       "badges": [
         "Kafka / Redpanda style",
         "Flink-oriented",
         "Experimental coverage"
       ],
       "flow": [
-        "Streaming producers",
-        "Topics",
-        "Flink transformations",
-        "BigQuery sinks",
-        "stg_streaming_candlestick_1min",
-        "Prediction input readiness"
+        "Producers",
+        "Kafka / Redpanda",
+        "Flink transforms",
+        "Streaming sink",
+        "Downstream marts"
       ],
       "cards": [
         {
-          "title": "Best use",
-          "body": "Recent market/context freshness and future automation once monitoring proves completeness and sink stability."
+          "title": "Producer Layer",
+          "body": "Market, on-chain, and sentiment producers prepare lower-latency context for streaming experiments."
         },
         {
-          "title": "Current posture",
-          "body": "Treat as partial compared with the batch path. It should not be the sole source for historical training coverage."
+          "title": "Flink Transformations",
+          "body": "Transformation modules shape recent signals such as order-flow, breakout, liquidation, and dead-letter handling."
+        },
+        {
+          "title": "Experimental Boundary",
+          "body": "Streaming is useful for freshness work, but it is not the primary full-history training coverage path yet."
         }
       ],
       "important_files": [
         {
-          "path": "local_scripts/streaming/producer/binance_full_producer.py",
-          "label": "Market producer",
-          "note": "Produces market stream messages."
-        },
-        {
-          "path": "local_scripts/streaming/producer/onchain_producer.py",
-          "label": "On-chain producer",
-          "note": "Produces on-chain context messages."
-        },
-        {
-          "path": "local_scripts/streaming/producer/sentiment_producer.py",
-          "label": "Sentiment producer",
-          "note": "Produces sentiment stream messages."
+          "path": "local_scripts/streaming/producer",
+          "label": "Streaming Producers",
+          "note": "Market, on-chain, and sentiment producers.",
+          "tag": "Pipeline"
         },
         {
           "path": "local_scripts/streaming/logic_crypto_streaming/main.py",
-          "label": "Flink logic entrypoint",
-          "note": "Streaming transformation logic."
+          "label": "Streaming Entrypoint",
+          "note": "Flink-oriented transformation entrypoint.",
+          "tag": "Pipeline"
         },
         {
-          "path": "kestra/flows-gke/streaming/the_streaming_hourly_transform_gke.yml",
-          "label": "Streaming Kestra flow",
-          "note": "GKE-oriented orchestration for streaming transforms."
+          "path": "local_scripts/streaming/logic_crypto_streaming/transformations",
+          "label": "Transformation Modules",
+          "note": "Signal transformation modules and dead-letter handling.",
+          "tag": "Pipeline"
+        },
+        {
+          "path": "local_scripts/streaming/scripts",
+          "label": "Sink Specs and Helpers",
+          "note": "BigQuery sink specs and local deployment helper scripts; avoid secrets.",
+          "tag": "Config"
         }
       ],
       "docs": [
         {
           "path": "docs/streaming_pipeline.md",
-          "label": "Streaming pipeline docs"
-        },
-        {
-          "path": "docs/kafka-connect-keyless-auth.md",
-          "label": "Kafka Connect auth note"
+          "label": "Streaming Pipeline Docs",
+          "note": "Beginner-friendly guide to producers, Kafka/Flink concepts, and freshness boundaries.",
+          "tag": "Docs"
         }
       ],
       "diagram": {
@@ -270,10 +273,10 @@
     },
     {
       "id": "dbt",
-      "label": "dbt",
+      "label": "dbt Transformation Layers",
       "eyebrow": "Transformation layers",
-      "title": "Layered BigQuery models for analytics, dashboards, ML, and monitoring",
-      "summary": "The dbt project normalizes raw sources, aligns time-series features, builds reusable facts/dimensions, exposes dashboard marts, prepares ML tables, and monitors health.",
+      "title": "dbt Transformation Layers",
+      "summary": "Layered BigQuery models normalize sources, align time-series features, and publish dashboard, ML, and monitoring marts.",
       "badges": [
         "Staging",
         "Intermediate",
@@ -284,67 +287,72 @@
       ],
       "flow": [
         "Sources",
-        "stg_*",
-        "int_*",
-        "core marts",
-        "dashboard / ML marts",
-        "monitoring marts"
+        "Staging Models",
+        "Intermediate Models",
+        "Core Marts",
+        "Dashboard / ML Marts",
+        "Monitoring Marts"
       ],
       "cards": [
         {
-          "title": "Reviewer lens",
-          "body": "The model naming convention makes the data lineage legible: stg for source normalization, int for aligned features, marts for downstream contracts."
+          "title": "Readable Lineage",
+          "body": "Staging normalizes sources, intermediate models align features, and marts publish dashboard, ML, and monitoring contracts."
         },
         {
-          "title": "ML contract boundary",
+          "title": "ML Contract Boundary",
           "body": "dbt may expose additive research columns, but production training only uses the conservative ml/feature_list.yml contract."
         }
       ],
       "important_files": [
         {
           "path": "dbt_transform/crypto_dbt/dbt_project.yml",
-          "label": "dbt project config",
-          "note": "Project-level model configuration."
+          "label": "dbt Project Config",
+          "note": "Project-level model configuration.",
+          "tag": "Config"
         },
         {
           "path": "dbt_transform/crypto_dbt/models/staging",
-          "label": "Staging models",
-          "note": "Source normalization."
+          "label": "Staging Models",
+          "note": "Source normalization and type cleanup. Technical prefix: stg_*.",
+          "tag": "Docs"
         },
         {
           "path": "dbt_transform/crypto_dbt/models/intermediate",
-          "label": "Intermediate models",
-          "note": "Hourly/daily alignment and source-specific aggregates."
+          "label": "Intermediate Models",
+          "note": "Hourly/daily alignment and feature aggregation. Technical prefix: int_*.",
+          "tag": "Docs"
         },
         {
           "path": "dbt_transform/crypto_dbt/models/marts/core",
-          "label": "Core marts",
-          "note": "Reusable dimensions and facts."
+          "label": "Core Marts",
+          "note": "Reusable analytics facts.",
+          "tag": "Docs"
         },
         {
           "path": "dbt_transform/crypto_dbt/models/marts/dashboard",
-          "label": "Dashboard marts",
-          "note": "BI-ready outputs."
+          "label": "Dashboard Marts",
+          "note": "BI-ready outputs.",
+          "tag": "Docs"
         },
         {
           "path": "dbt_transform/crypto_dbt/models/marts/ml",
-          "label": "ML marts",
-          "note": "Training data, prediction input, labels, metrics, and quality tables."
+          "label": "ML Marts",
+          "note": "Training dataset and prediction input.",
+          "tag": "Production"
         },
         {
           "path": "dbt_transform/crypto_dbt/models/marts/monitoring",
-          "label": "Monitoring marts",
-          "note": "Pipeline health and audit views."
+          "label": "Monitoring Marts",
+          "note": "Freshness, quality, and pipeline health.",
+          "tag": "Validation"
         }
       ],
       "docs": [
         {
           "path": "docs/dbt_models.md",
-          "label": "dbt model docs"
-        },
-        {
-          "path": "dbt_transform/crypto_dbt/README.md",
-          "label": "dbt project README"
+          "label": "dbt Model Docs",
+          "note": "Layer-by-layer guide to staging, intermediate, marts, ML, and monitoring models.",
+          "tag": "Docs"
         }
       ],
       "diagram": {
@@ -360,10 +368,10 @@
     },
     {
       "id": "ml",
-      "label": "ML/MLOps",
+      "label": "ML and MLOps Lifecycle",
       "eyebrow": "Conservative signal workflow",
-      "title": "Artifact-first training, prediction, optional tracking, and promotion gates",
-      "summary": "The ML subsystem trains and predicts from dbt ML marts while preserving feature-contract consistency, local-first research, optional MLflow/Optuna/Registry support, and conservative promotion checks.",
+      "title": "ML and MLOps Lifecycle",
+      "summary": "Conservative artifact-first training and prediction with feature contracts, promotion gates, optional MLflow/Optuna/Registry, and research-only scripts kept separate.",
       "badges": [
         "Artifact-first",
         "Feature contract",
@@ -372,77 +380,83 @@
         "Optional Registry"
       ],
       "flow": [
-        "mart_ml_training_dataset_hourly",
-        "feature_list.yml",
-        "train_model.py",
-        "promotion_gate.py",
-        "latest_model artifact",
-        "predict_latest.py"
+        "Training dataset",
+        "Feature contract",
+        "Train strategies",
+        "MLflow / Optuna",
+        "Promotion gate",
+        "Artifact prediction"
       ],
       "cards": [
         {
-          "title": "Default production posture",
+          "title": "Default Production Posture",
           "body": "Prediction loads artifacts by default. Registry loading is optional and only used when explicitly configured."
         },
         {
-          "title": "Research separation",
+          "title": "Research Separation",
           "body": "local_*.py scripts support diagnostics, AutoML, ablation, keeper validation, and microstructure experiments without becoming production serving paths."
         },
         {
-          "title": "subset9 / microstructure",
+          "title": "subset9 / Microstructure",
           "body": "These features are research/manual candidates and have not replaced the baseline production contract."
         }
       ],
       "important_files": [
         {
           "path": "ml/train_model.py",
-          "label": "Training entrypoint",
-          "note": "Trains models and writes artifacts when configured."
+          "label": "Training Entrypoint",
+          "note": "Trains models and writes artifacts when configured.",
+          "tag": "Production"
         },
         {
           "path": "ml/predict_latest.py",
-          "label": "Prediction entrypoint",
-          "note": "Loads latest artifact or optional registry model."
+          "label": "Prediction Entrypoint",
+          "note": "Loads latest artifact or optional registry model.",
+          "tag": "Production"
         },
         {
           "path": "ml/feature_list.yml",
-          "label": "Production feature contract",
-          "note": "Conservative default contract; do not change casually."
+          "label": "Production Feature Contract",
+          "note": "Conservative default contract; do not change casually.",
+          "tag": "Config"
         },
         {
           "path": "ml/feature_contract.py",
-          "label": "Contract hashing",
-          "note": "Stable metadata for lineage."
+          "label": "Contract Hashing",
+          "note": "Stable metadata for lineage.",
+          "tag": "Production"
         },
         {
           "path": "ml/promotion_gate.py",
-          "label": "Promotion gate",
-          "note": "Prevents automatic promotion of worse candidates."
+          "label": "Promotion Gate",
+          "note": "Prevents automatic promotion of worse candidates.",
+          "tag": "Production"
         },
         {
           "path": "ml/model_loader.py",
-          "label": "Model loader",
-          "note": "Artifact-first and optional registry loading."
+          "label": "Model Loader",
+          "note": "Artifact-first and optional registry loading.",
+          "tag": "Production"
         },
         {
           "path": "ml/local_automl_research.py",
-          "label": "Local AutoML research",
-          "note": "Research-only local tooling."
+          "label": "Local AutoML Research",
+          "note": "Research-only local tooling.",
+          "tag": "Research"
         },
         {
           "path": "ml/local_microstructure_subset_contract_trial.py",
-          "label": "Microstructure contract trial",
-          "note": "Manual research candidate workflow."
+          "label": "Microstructure Contract Trial",
+          "note": "Manual research candidate workflow.",
+          "tag": "Research"
         }
       ],
       "docs": [
         {
           "path": "docs/ml_mLOps.md",
-          "label": "ML/MLOps docs"
-        },
-        {
-          "path": "docs/dbt_models.md",
-          "label": "ML mart context"
+          "label": "ML/MLOps Docs",
+          "note": "Beginner-friendly guide to training, prediction, optional MLOps, and research boundaries.",
+          "tag": "Docs"
         }
       ],
       "diagram": {
@@ -459,75 +473,77 @@
     },
     {
       "id": "kestra",
-      "label": "Kestra",
+      "label": "Kestra Orchestration",
       "eyebrow": "Orchestration",
-      "title": "GKE-oriented flows for ingestion, dbt, ML, monitoring, quality, and PR previews",
-      "summary": "Kestra represents the production-style orchestration layer. Flow groups are separated by purpose, with ML deployment gated separately from batch/dbt deployment.",
+      "title": "Kestra Orchestration",
+      "summary": "Flow grouping and orchestration logic for raw, dbt, ML, streaming, monitoring, quality, preview, and master flows. Kubernetes runtime details live in the K8s/GKE tab.",
       "badges": [
-        "Raw flows",
-        "dbt flows",
-        "ML gated",
+        "Raw Flows",
+        "dbt Flows",
+        "ML Gated",
         "Monitoring",
-        "Preview flows"
+        "Preview Flows"
       ],
       "flow": [
-        "Raw ingestion flows",
-        "dbt transform flows",
-        "Quality and monitoring",
-        "ML train/predict flows",
-        "Master overview",
-        "PR preview validation"
+        "Raw Flows",
+        "dbt Flows",
+        "Quality Checks",
+        "ML Flows",
+        "Master Flow",
+        "PR Previews"
       ],
       "cards": [
         {
-          "title": "Flow grouping",
-          "body": "GKE flows live under kestra/flows-gke and are grouped into raw, dbt, ML, streaming, monitoring, quality, preview, and master directories."
+          "title": "Flow Grouping",
+          "body": "Flows are grouped by workflow intent: raw ingestion, dbt transforms, ML, streaming, monitoring, quality, preview, and master overview."
         },
         {
-          "title": "ML deploy gate",
-          "body": "ENABLE_ML_KESTRA_DEPLOY controls ML flow deployment. Batch and dbt flow deployment stay independent of that flag."
+          "title": "Schedules and Preconditions",
+          "body": "Production-style flows encode orchestration timing and dependencies, while PR preview flows avoid production triggers."
+        },
+        {
+          "title": "ML Deploy Gate",
+          "body": "ML flow deployment remains separately gated so ML runtime changes are intentional."
         }
       ],
       "important_files": [
         {
           "path": "kestra/flows-gke/raw",
-          "label": "Raw flows",
-          "note": "Batch ingestion snapshots and intraday refresh."
+          "label": "Raw Flows",
+          "note": "Batch ingestion snapshots and intraday refresh flow definitions.",
+          "tag": "Orchestration"
         },
         {
           "path": "kestra/flows-gke/dbt",
-          "label": "dbt flows",
-          "note": "Hourly, intraday, daily market, macro, and ETF transforms."
+          "label": "dbt Flows",
+          "note": "Hourly, intraday, daily market, macro, and ETF transform flows.",
+          "tag": "Orchestration"
         },
         {
           "path": "kestra/flows-gke/ml",
-          "label": "ML flows",
-          "note": "Training, prediction, and strategy matrix flows gated separately."
+          "label": "ML Flows",
+          "note": "Training, prediction, and strategy matrix flow definitions.",
+          "tag": "Orchestration"
         },
         {
           "path": "kestra/flows-gke/preview",
-          "label": "Preview flows",
-          "note": "PR validation flows."
+          "label": "Preview Flows",
+          "note": "PR validation flows without production triggers.",
+          "tag": "Orchestration"
         },
         {
-          "path": ".github/scripts/kestra_deploy_plan.py",
-          "label": "Deploy plan helper",
-          "note": "Computes deploy/build gating outputs."
-        },
-        {
-          "path": ".github/scripts/deploy_kestra_flows.py",
-          "label": "Flow deploy helper",
-          "note": "Deploys selected flows from CI."
+          "path": "kestra/flows-gke/master",
+          "label": "Master Flow",
+          "note": "Overview orchestration flow.",
+          "tag": "Orchestration"
         }
       ],
       "docs": [
         {
           "path": "docs/kestra_orchestration.md",
-          "label": "Kestra orchestration docs"
-        },
-        {
-          "path": "docs/kestra-gke-rollback.md",
-          "label": "GKE rollback note"
+          "label": "Kestra Orchestration Docs",
+          "note": "Beginner-friendly guide to flow grouping, gates, and orchestration boundaries.",
+          "tag": "Docs"
         }
       ],
       "diagram": {
@@ -542,11 +558,228 @@
       ]
     },
     {
+      "id": "k8s-gke",
+      "label": "K8s / GKE Runtime",
+      "eyebrow": "Runtime infrastructure",
+      "title": "K8s / GKE Runtime",
+      "summary": "Runtime layer for production-style jobs and Kestra task execution using GKE Autopilot, Kubernetes pods, Artifact Registry images, Workload Identity, Helm values, and Kubernetes manifests.",
+      "badges": [
+        "GKE Autopilot",
+        "Kubernetes Pods",
+        "Artifact Registry",
+        "Workload Identity",
+        "Cloud SQL"
+      ],
+      "flow": [
+        "Docker Images",
+        "Artifact Registry",
+        "GKE Cluster",
+        "Kestra Runtime",
+        "Task Pods",
+        "Runtime Safety"
+      ],
+      "cards": [
+        {
+          "title": "GKE Runtime Layer",
+          "body": "GKE provides the Kubernetes runtime where production-style jobs and Kestra task pods can execute."
+        },
+        {
+          "title": "Kubernetes Pod Execution",
+          "body": "Kestra task execution is separated into pods so batch, dbt, ML, and streaming work can use purpose-built images."
+        },
+        {
+          "title": "Artifact Registry Images",
+          "body": "Batch, dbt, and ML images are built separately and referenced by orchestration/runtime layers."
+        },
+        {
+          "title": "Workload Identity",
+          "body": "Cloud access should use Workload Identity and service account bindings instead of committed keys."
+        },
+        {
+          "title": "Cloud SQL Dependency for Kestra",
+          "body": "Kestra webserver, executor, and worker components may fail if Cloud SQL, required secrets, or identity bindings are not ready."
+        },
+        {
+          "title": "Runtime Safety",
+          "body": "This runtime layer is infrastructure. It does not define model logic or prove model quality."
+        }
+      ],
+      "important_files": [
+        {
+          "path": "k8s",
+          "label": "Kubernetes Manifests",
+          "note": "RBAC and secret-provider support manifests for Kestra runtime.",
+          "tag": "Runtime"
+        },
+        {
+          "path": "helm/kestra/values-gke.yaml",
+          "label": "Kestra Helm Values",
+          "note": "GKE-oriented Helm values for Kestra components.",
+          "tag": "Runtime"
+        },
+        {
+          "path": "docker",
+          "label": "Runtime Docker Images",
+          "note": "Batch, dbt, and ML Dockerfiles used by runtime jobs.",
+          "tag": "Runtime"
+        },
+        {
+          "path": "kestra/flows-gke",
+          "label": "GKE Flow Definitions",
+          "note": "Kestra flows intended for GKE-oriented execution.",
+          "tag": "Orchestration"
+        },
+        {
+          "path": ".github/workflows/kestra-deploy-gke.yml",
+          "label": "Kestra Deploy Workflow",
+          "note": "CI workflow that plans and deploys selected GKE flows.",
+          "tag": "CI/CD"
+        },
+        {
+          "path": ".github/scripts/kestra_deploy_plan.py",
+          "label": "Deploy Plan Helper",
+          "note": "Computes deployment/build gating decisions.",
+          "tag": "CI/CD"
+        },
+        {
+          "path": ".github/scripts/deploy_kestra_flows.py",
+          "label": "Flow Deploy Helper",
+          "note": "Deploys selected flows from CI when gates allow it.",
+          "tag": "CI/CD"
+        }
+      ],
+      "docs": [
+        {
+          "path": "docs/k8s_gke_runtime.md",
+          "label": "K8s / GKE Runtime Docs",
+          "note": "Runtime guide for Kubernetes, GKE, Helm, images, identity, and Cloud SQL dependencies.",
+          "tag": "Docs"
+        }
+      ],
+      "warnings": [
+        "Do not deploy GKE flows just to make PR checks green.",
+        "Kestra components may fail if Cloud SQL, required secrets, or identity bindings are not ready.",
+        "ML Kestra deploy remains gated.",
+        "GKE runtime is infrastructure/runtime, not model logic."
+      ]
+    },
+    {
+      "id": "terraform",
+      "label": "Terraform Infrastructure",
+      "eyebrow": "Infrastructure as code",
+      "title": "Terraform Infrastructure",
+      "summary": "Terraform describes cloud infrastructure such as BigQuery datasets, GCS buckets, Artifact Registry, GKE/Kestra resources, Cloud SQL, IAM, networking, and Grafana support. This docs task does not run terraform apply.",
+      "badges": [
+        "GCP Resources",
+        "IAM",
+        "Cloud SQL",
+        "Artifact Registry",
+        "State Safety"
+      ],
+      "flow": [
+        "Providers",
+        "GCP Resources",
+        "IAM Bindings",
+        "Runtime Infra",
+        "State Safety",
+        "Review Only"
+      ],
+      "cards": [
+        {
+          "title": "Infrastructure as Code",
+          "body": "Terraform keeps cloud resources described in code so infra can be reviewed instead of configured by memory."
+        },
+        {
+          "title": "GCP Resources",
+          "body": "The repo includes Terraform for BigQuery, GCS, Artifact Registry, GKE/Kestra, Cloud SQL, networking, and monitoring support."
+        },
+        {
+          "title": "IAM and Service Accounts",
+          "body": "IAM and service-account definitions support Workload Identity and CI/CD access patterns."
+        },
+        {
+          "title": "Cloud SQL for Kestra",
+          "body": "Kestra infrastructure includes Cloud SQL-related resources and secrets wiring."
+        },
+        {
+          "title": "Artifact Registry",
+          "body": "Artifact Registry stores runtime images for batch, dbt, and ML jobs."
+        },
+        {
+          "title": "State and Secrets Safety",
+          "body": "State files, tfvars with secrets, service account keys, and local credentials must never be committed or exposed."
+        }
+      ],
+      "important_files": [
+        {
+          "path": "terraform",
+          "label": "Main Terraform Module",
+          "note": "Primary GCP infrastructure definitions.",
+          "tag": "Infra"
+        },
+        {
+          "path": "terraform/provider.tf",
+          "label": "Terraform Provider Config",
+          "note": "Provider configuration for the main Terraform module.",
+          "tag": "Infra"
+        },
+        {
+          "path": "terraform/main.tf",
+          "label": "Main Infrastructure Entry",
+          "note": "Main resource composition entrypoint.",
+          "tag": "Infra"
+        },
+        {
+          "path": "terraform/artifact_registry.tf",
+          "label": "Artifact Registry Resources",
+          "note": "Container image registry resources.",
+          "tag": "Infra"
+        },
+        {
+          "path": "terraform/kestra_gke.tf",
+          "label": "Kestra GKE Resources",
+          "note": "GKE-oriented Kestra runtime infrastructure.",
+          "tag": "Infra"
+        },
+        {
+          "path": "terraform/kestra_cloudsql.tf",
+          "label": "Cloud SQL for Kestra",
+          "note": "Cloud SQL resources used by Kestra.",
+          "tag": "Infra"
+        },
+        {
+          "path": "terraform-bootstrap/main.tf",
+          "label": "Bootstrap Terraform",
+          "note": "Bootstrap IAM/service-account setup.",
+          "tag": "Infra"
+        },
+        {
+          "path": "terraform-grafana/main.tf",
+          "label": "Grafana Terraform",
+          "note": "Grafana-related infrastructure support.",
+          "tag": "Infra"
+        }
+      ],
+      "docs": [
+        {
+          "path": "docs/terraform_infrastructure.md",
+          "label": "Terraform Infrastructure Docs",
+          "note": "Beginner-friendly guide to infra modules, resources, and safety boundaries.",
+          "tag": "Docs"
+        }
+      ],
+      "warnings": [
+        "Never commit .tfstate, .tfvars with secrets, service account keys, or local credentials.",
+        "Do not run terraform apply casually.",
+        "Terraform docs are descriptive in this PR only."
+      ]
+    },
+    {
       "id": "cicd",
-      "label": "CI/CD",
+      "label": "CI/CD and Deployment Gates",
       "eyebrow": "Deployment gates",
-      "title": "GitHub Actions quality checks, Docker gating, Kestra deploy planning, and PR safety",
-      "summary": "CI/CD keeps documentation, code quality, Docker builds, and Kestra deployment safer by running targeted checks and skipping expensive work when no deployable runtime changes exist.",
+      "title": "CI/CD and Deployment Gates",
+      "summary": "GitHub Actions, repo guard, Docker gate, Kestra deploy plan, and PR required gate keep docs-only and runtime PRs separated.",
       "badges": [
         "Repo guard",
         "Docker build gate",
@@ -557,55 +790,72 @@
         "PR changes",
         "Quality checks",
         "Deploy plan",
-        "Docker relevance gate",
-        "Kestra deploy gate",
-        "Required gate summary"
+        "Docker gate",
+        "Kestra gate",
+        "Required gate"
       ],
       "cards": [
         {
-          "title": "Cost-aware validation",
-          "body": "Docker builds and Kestra deploy steps are gated so docs-only or non-runtime PRs avoid unnecessary cloud-adjacent work."
+          "title": "GitHub Actions Gatekeeping",
+          "body": "Workflows run quality checks, plan deploy needs, and aggregate required status for PRs."
         },
         {
-          "title": "Required checks",
-          "body": "The required-gate workflow aggregates expected checks so skipped deploy paths do not incorrectly block safe PRs."
+          "title": "Docker Gate",
+          "body": "Docker image work is gated so docs-only PRs do not build runtime images unnecessarily."
+        },
+        {
+          "title": "Kestra Deploy Plan",
+          "body": "Deploy planning decides which flow groups and runtime checks are relevant without explaining Kubernetes runtime internals."
+        },
+        {
+          "title": "Docs-Only Safety",
+          "body": "Documentation changes should not trigger training, backfills, deploys, cloud writes, or Docker builds."
         }
       ],
       "important_files": [
         {
           "path": ".github/workflows/quality-check.yml",
-          "label": "Quality checks",
-          "note": "Tests, repo guard, and static validation."
+          "label": "Quality Checks",
+          "note": "Tests, repo guard, and static validation workflow.",
+          "tag": "CI/CD"
         },
         {
           "path": ".github/workflows/docker-build-push.yml",
-          "label": "Docker build/push",
-          "note": "Gated image build and smoke workflow."
+          "label": "Docker Build Gate",
+          "note": "Gated Docker build and smoke workflow.",
+          "tag": "CI/CD"
         },
         {
           "path": ".github/workflows/kestra-deploy-gke.yml",
-          "label": "Kestra deploy",
-          "note": "Deploys GKE flows when plan allows it."
+          "label": "Kestra Deploy Gate",
+          "note": "Deploys selected flows only when plan allows it.",
+          "tag": "CI/CD"
         },
         {
           "path": ".github/workflows/pr-required-gate.yml",
-          "label": "Required gate",
-          "note": "Aggregates PR check status."
+          "label": "PR Required Gate",
+          "note": "Aggregates required PR check status.",
+          "tag": "CI/CD"
+        },
+        {
+          "path": ".github/scripts/kestra_deploy_plan.py",
+          "label": "Kestra Deploy Plan",
+          "note": "Computes deploy/build gating outputs.",
+          "tag": "CI/CD"
         },
         {
           "path": "scripts/repo_guard.py",
-          "label": "Repository guard",
-          "note": "Checks repository safety rules."
+          "label": "Repository Guard",
+          "note": "Checks repository safety rules.",
+          "tag": "Validation"
         }
       ],
       "docs": [
         {
-          "path": "docs/kestra_orchestration.md",
-          "label": "Kestra gating docs"
-        },
-        {
-          "path": "docs/production-runbook.md",
-          "label": "Production runbook"
+          "path": "docs/ci_cd_gates.md",
+          "label": "CI/CD Gates Docs",
+          "note": "Beginner-friendly guide to workflows, gating, and docs-only safety.",
+          "tag": "Docs"
         }
       ],
       "diagram": {
@@ -621,10 +871,10 @@
     },
     {
       "id": "repo-map",
-      "label": "Repo Map",
+      "label": "Repository Map",
       "eyebrow": "Where to look",
-      "title": "Repository areas grouped by reviewer intent",
-      "summary": "Use this map to quickly find ingestion, streaming, dbt, orchestration, ML, infrastructure, CI/CD, Docker, tests, and documentation areas.",
+      "title": "Repository Map",
+      "summary": "Quick map for ingestion, streaming, dbt, orchestration, ML, infrastructure, CI/CD, Docker, tests, and docs.",
       "badges": [
         "Reviewer guide",
         "Safe paths only",
@@ -640,11 +890,11 @@
       ],
       "cards": [
         {
-          "title": "Fast review path",
-          "body": "Start with README.md, docs/architecture.md, docs/repository_map.md, then use this explorer to jump into the subsystem files."
+          "title": "Fast Review Path",
+          "body": "Start with README.md, docs/architecture.md, docs/repository_map.md, then use this explorer to understand subsystem boundaries."
         },
         {
-          "title": "Sensitive files omitted",
+          "title": "Sensitive Files Omitted",
           "body": "Local env files, key files, Terraform state, logs, generated outputs, and local artifacts are intentionally excluded from this explorer."
         }
       ],
@@ -654,16 +904,21 @@
           "paths": [
             "README.md",
             "docs/architecture.md",
-            "docs/repository_map.md",
             "docs/batch_pipeline.md",
             "docs/streaming_pipeline.md",
             "docs/dbt_models.md",
             "docs/ml_mLOps.md",
-            "docs/kestra_orchestration.md"
+            "docs/kestra_orchestration.md",
+            "docs/k8s_gke_runtime.md",
+            "docs/terraform_infrastructure.md",
+            "docs/ci_cd_gates.md",
+            "docs/production_boundaries.md",
+            "docs/repository_map.md",
+            "docs/codebase_knowledge_graph.md"
           ]
         },
         {
-          "name": "Batch and streaming ingestion",
+          "name": "Batch + Streaming Ingestion",
           "paths": [
             "local_scripts/batch",
             "local_scripts/batch/backfill",
@@ -673,7 +928,7 @@
           ]
         },
         {
-          "name": "dbt and analytics marts",
+          "name": "dbt and Analytics Marts",
           "paths": [
             "dbt_transform/crypto_dbt/models/staging",
             "dbt_transform/crypto_dbt/models/intermediate",
@@ -684,45 +939,64 @@
           ]
         },
         {
-          "name": "Orchestration and deployment",
+          "name": "Orchestration and Deployment",
           "paths": [
             "kestra/flows-gke",
             ".github/workflows",
             ".github/scripts",
-            "docker",
-            "terraform",
-            "helm",
-            "k8s"
+            "docker"
           ]
         },
         {
-          "name": "ML and research",
+          "name": "K8s / GKE Runtime",
+          "paths": [
+            "k8s",
+            "helm/kestra/values-gke.yaml",
+            "kestra/flows-gke",
+            "docker"
+          ]
+        },
+        {
+          "name": "Terraform Infrastructure",
+          "paths": [
+            "terraform",
+            "terraform-bootstrap",
+            "terraform-grafana"
+          ]
+        },
+        {
+          "name": "ML and Research",
           "paths": [
             "ml/train_model.py",
             "ml/predict_latest.py",
             "ml/feature_contract.py",
             "ml/promotion_gate.py",
             "ml/model_loader.py",
-            "ml/local_*.py"
+            "ml/local_automl_research.py",
+            "ml/research/configs"
           ]
         }
       ],
       "important_files": [
         {
           "path": "docs/repository_map.md",
-          "label": "Full repository map",
-          "note": "Canonical folder-by-folder description."
+          "label": "Full Repository Map",
+          "note": "Canonical folder-by-folder description.",
+          "tag": "Docs"
         },
         {
           "path": "scripts/repo_guard.py",
-          "label": "Repo guard",
-          "note": "Safety checks for repository hygiene."
+          "label": "Repo Guard",
+          "note": "Safety checks for repository hygiene.",
+          "tag": "Validation"
         }
       ],
       "docs": [
         {
           "path": "docs/repository_map.md",
-          "label": "Repository map docs"
+          "label": "Repository Map Docs",
+          "note": "Grouped repo guide by subsystem, purpose, type, and caution.",
+          "tag": "Docs"
         }
       ],
       "warnings": [
@@ -732,10 +1006,10 @@
     },
     {
       "id": "research-production",
-      "label": "Research vs Production",
+      "label": "Production Boundaries",
       "eyebrow": "Operational boundary",
-      "title": "Production defaults are conservative; research candidates remain manual",
-      "summary": "The project keeps production entrypoints, feature contracts, and deployment gates separate from local research scripts, experimental features, and optional MLOps integrations.",
+      "title": "Production Boundaries",
+      "summary": "Production entrypoints and feature contracts stay separate from local research scripts, experimental features, and optional MLOps.",
       "badges": [
         "Conservative defaults",
         "Research isolated",
@@ -743,80 +1017,135 @@
         "No auto promotion"
       ],
       "flow": [
-        "Production contract",
-        "Train/predict entrypoints",
-        "Promotion gate",
-        "Artifact fallback",
-        "Optional registry",
-        "Research candidates stay manual"
+        "Production Contract",
+        "Train / Predict",
+        "Promotion Gate",
+        "Artifact Fallback",
+        "Optional Registry",
+        "Research Stays Manual"
       ],
       "cards": [
         {
-          "title": "Production default files",
-          "body": "ml/train_model.py, ml/predict_latest.py, ml/feature_list.yml, ml/model_loader.py, and ml/promotion_gate.py define the conservative production workflow."
+          "title": "Production Default Files",
+          "body": "The production side stays conservative: explicit feature list, contract hashing, training/prediction entrypoints, promotion gate, and artifact-first loading."
         },
         {
-          "title": "Research-only files",
-          "body": "ml/local_*.py and research config candidates support local exploration, diagnostics, and model readiness review. They are not production serving paths."
+          "title": "Research-Only Files",
+          "body": "Local research scripts support exploration, diagnostics, ablation, recall focus, and keeper validation without becoming serving paths."
         },
         {
-          "title": "MLOps optionality",
+          "title": "MLOps Optionality",
           "body": "MLflow logging, Optuna tuning, and MLflow Registry integration require explicit configuration and are off by default."
         }
       ],
       "production_files": [
-        "ml/train_model.py",
-        "ml/predict_latest.py",
-        "ml/feature_list.yml",
-        "ml/feature_contract.py",
-        "ml/promotion_gate.py",
-        "ml/model_loader.py",
-        "dbt_transform/crypto_dbt/models/marts/ml/mart_ml_training_dataset_hourly.sql",
-        "dbt_transform/crypto_dbt/models/marts/ml/mart_ml_prediction_input_latest.sql",
-        "kestra/flows-gke/ml/the_ml_train_daily_gke.yml",
-        "kestra/flows-gke/ml/the_ml_predict_hourly_gke.yml"
+        {
+          "path": "ml/train_model.py",
+          "label": "Training Entrypoint",
+          "note": "Trains models and writes local/GCS artifacts only when explicitly configured.",
+          "tag": "Production"
+        },
+        {
+          "path": "ml/predict_latest.py",
+          "label": "Prediction Entrypoint",
+          "note": "Loads the latest artifact or optional registry model for signal prediction.",
+          "tag": "Production"
+        },
+        {
+          "path": "ml/feature_list.yml",
+          "label": "Feature List",
+          "note": "Conservative production feature contract; not changed by docs work.",
+          "tag": "Production"
+        },
+        {
+          "path": "ml/feature_contract.py",
+          "label": "Feature Contract",
+          "note": "Hashes and validates the feature contract for reproducible lineage.",
+          "tag": "Production"
+        },
+        {
+          "path": "ml/promotion_gate.py",
+          "label": "Promotion Gate",
+          "note": "Prevents automatic promotion of weaker candidate models.",
+          "tag": "Production"
+        },
+        {
+          "path": "ml/model_loader.py",
+          "label": "Model Loader",
+          "note": "Artifact-first model loading with optional registry support.",
+          "tag": "Production"
+        }
       ],
       "research_files": [
-        "ml/local_automl_research.py",
-        "ml/local_feature_label_diagnostics.py",
-        "ml/local_feature_engineering_research.py",
-        "ml/local_feature_ablation_research.py",
-        "ml/local_down_recall_focus_research.py",
-        "ml/local_keeper_candidate_validation.py",
-        "ml/local_microstructure_safe_parity_debug.py",
-        "ml/local_microstructure_subset_contract_trial.py",
-        "dbt_transform/crypto_dbt/tests/research"
+        {
+          "path": "ml/local_automl_research.py",
+          "label": "Local AutoML Research",
+          "note": "Local AutoML exploration and candidate discovery.",
+          "tag": "Research"
+        },
+        {
+          "path": "ml/local_feature_label_diagnostics.py",
+          "label": "Feature Label Diagnostics",
+          "note": "Feature/label diagnostics for model readiness review.",
+          "tag": "Research"
+        },
+        {
+          "path": "ml/local_feature_engineering_research.py",
+          "label": "Feature Engineering Research",
+          "note": "Manual feature exploration outside production defaults.",
+          "tag": "Research"
+        },
+        {
+          "path": "ml/local_feature_ablation_research.py",
+          "label": "Feature Ablation Research",
+          "note": "Ablation experiments for understanding feature contribution.",
+          "tag": "Research"
+        },
+        {
+          "path": "ml/local_down_recall_focus_research.py",
+          "label": "Down Recall Focus Research",
+          "note": "Manual research around downside recall and class behavior.",
+          "tag": "Research"
+        },
+        {
+          "path": "ml/local_keeper_candidate_validation.py",
+          "label": "Keeper Candidate Validation",
+          "note": "Manual validation of keeper candidates before any production consideration.",
+          "tag": "Research"
+        }
       ],
       "important_files": [
         {
           "path": "ml/feature_list.yml",
-          "label": "Production feature list",
-          "note": "Not changed by this documentation work."
+          "label": "Production Feature List",
+          "note": "Not changed by this documentation work.",
+          "tag": "Config"
         },
         {
           "path": "ml/mlflow_utils.py",
-          "label": "Optional MLflow logging",
-          "note": "Best-effort unless configured otherwise."
+          "label": "Optional MLflow Logging",
+          "note": "Best-effort unless configured otherwise.",
+          "tag": "Research"
         },
         {
           "path": "ml/optuna_tuning.py",
-          "label": "Optional tuning",
-          "note": "Off unless explicitly requested."
+          "label": "Optional Tuning",
+          "note": "Off unless explicitly requested.",
+          "tag": "Research"
         },
         {
           "path": "ml/mlflow_registry.py",
-          "label": "Optional registry",
-          "note": "Alias-based registry integration, not required for prediction."
+          "label": "Optional Registry",
+          "note": "Alias-based registry integration, not required for prediction.",
+          "tag": "Research"
         }
       ],
       "docs": [
         {
-          "path": "docs/ml_mLOps.md",
-          "label": "ML/MLOps docs"
-        },
-        {
-          "path": "README.md",
-          "label": "Safety notes"
+          "path": "docs/production_boundaries.md",
+          "label": "Production Boundaries Docs",
+          "note": "Beginner-friendly guide to production defaults, research-only tooling, and safety boundaries.",
+          "tag": "Docs"
         }
       ],
       "warnings": [
@@ -827,38 +1156,37 @@
     },
     {
       "id": "ai-map",
-      "label": "AI codebase map",
+      "label": "Optional AI Codebase Map",
       "eyebrow": "Optional Understand-Anything layer",
-      "title": "Optional AI-assisted exploration placeholder",
-      "summary": "Understand-Anything can be used later as an interactive codebase exploration layer, but it is not required to run, review, or understand this project.",
+      "title": "Optional AI Codebase Map",
+      "summary": "Optional future exploration layer; not required to run, review, or understand the project.",
       "badges": [
         "Optional",
         "Not required",
         "Placeholder only"
       ],
       "flow": [
-        "README and docs",
-        "Static diagrams",
-        "Interactive explorer",
-        "Optional /understand",
+        "README / docs",
+        "Static explorer",
+        "Optional scan",
         "Optional dashboard",
-        "Future graph layer"
+        "Future graph"
       ],
       "cards": [
         {
-          "title": "What it is",
+          "title": "What It Is",
           "body": "Understand-Anything is optional and is not part of the project runtime, pipeline, training workflow, or deployment process."
         },
         {
-          "title": "How to generate later",
+          "title": "How To Generate Later",
           "body": "Run /understand --language en, then /understand-dashboard in an environment where Understand-Anything is available."
         },
         {
-          "title": "Current state",
+          "title": "Current State",
           "body": "This repo may not include .understand-anything/knowledge-graph.json. If generated later, it can become an additional exploration layer."
         },
         {
-          "title": "Primary docs remain",
+          "title": "Primary Docs Remain",
           "body": "README.md, docs/architecture.md, docs/repository_map.md, and this static explorer remain the primary documentation."
         }
       ],
@@ -869,19 +1197,23 @@
       "important_files": [
         {
           "path": "README.md",
-          "label": "Primary overview",
-          "note": "Human-curated documentation remains first."
+          "label": "Primary Overview",
+          "note": "Human-curated documentation remains first.",
+          "tag": "Docs"
         },
         {
           "path": "docs/interactive/index.html",
-          "label": "Static explorer",
-          "note": "This docs-only page."
+          "label": "Static Explorer",
+          "note": "This docs-only page.",
+          "tag": "Docs"
         }
       ],
       "docs": [
         {
-          "path": "docs/interactive/README.md",
-          "label": "Interactive explorer README"
+          "path": "docs/codebase_knowledge_graph.md",
+          "label": "Codebase Knowledge Graph Docs",
+          "note": "Optional Understand-Anything placeholder and future exploration guide.",
+          "tag": "Docs"
         }
       ],
       "warnings": [
