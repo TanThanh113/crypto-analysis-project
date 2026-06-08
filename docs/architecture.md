@@ -1,278 +1,80 @@
-# Architecture
-
-## Overview
+# Project Architecture
 
-This project implements a production-style crypto analytics and ML pipeline on Google Cloud.
-
-The architecture combines batch data ingestion, BigQuery/dbt transformation, Kestra orchestration, Docker-based execution, ML training and prediction, GCS model artifact storage, and Looker Studio dashboarding.
-
----
-
-## High-Level Architecture
-
-```text
-External Data Sources
-  |
-  |-- Binance trades
-  |-- Funding and basis data
-  |-- Deribit options data
-  |-- Liquidation heatmap data
-  |-- Stablecoin supply data
-  |-- Exchange reserve data
-  |-- Macro indicators
-  |-- ETF indicators
-  |-- Reddit and Telegram sentiment
-  |
-  v
-Batch Collectors
-  |
-  v
-GCS / BigLake / Iceberg
-  |
-  v
-BigQuery External / Raw Tables
-  |
-  v
-dbt Staging Models
-  |
-  v
-dbt Intermediate Models
-  |
-  v
-Core, Dashboard, and ML Marts
-  |
-  |-- Looker Studio Dashboard
-  |-- ML Training Dataset
-  |-- ML Prediction Input
-```
-
----
-
-## Orchestration Layer
-
-Kestra is used as the workflow orchestration layer.
-
-Main responsibilities:
-
-* Run daily market ingestion
-* Run macro and ETF ingestion
-* Run hourly and intraday snapshots
-* Trigger dbt transformations
-* Run ML training
-* Run ML prediction when real-time input is available
-* Provide a manual overview flow for demo and controlled execution
-
-Production Kestra tasks use Docker images stored in Google Artifact Registry.
-
----
-
-## Container Layer
-
-The project uses three main Docker images:
-
-```text
-crypto-batch -> batch extraction and loading scripts
-crypto-dbt   -> dbt BigQuery transformations
-crypto-ml    -> ML training and prediction scripts
-```
-
-Artifact Registry repository:
-
-```text
-asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker
-```
-
-Image URIs:
-
-```text
-asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-batch:latest
-asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-dbt:latest
-asia-southeast1-docker.pkg.dev/project-lambda-crypto/crypto-docker/crypto-ml:latest
-```
-
----
-
-## dbt Model Layers
-
-### Staging
-
-The staging layer normalizes raw source data.
-
-Examples:
-
-```text
-stg_binance_trades
-stg_funding_rates
-stg_deribit_options
-stg_liquidation_map
-stg_macro_indicators
-stg_etf_indicators
-stg_stablecoin_supply
-stg_exchange_reserve
-stg_reddit_raw
-stg_telegram_raw
-```
-
-### Intermediate
-
-The intermediate layer performs aggregation, feature engineering, and time alignment.
-
-Examples:
-
-```text
-int_market_trades_hourly
-int_funding_hourly
-int_options_hourly
-int_liquidation_hourly
-int_macro_daily
-int_etf_daily
-int_social_sentiment_hourly
-int_stablecoin_hourly
-int_exchange_reserve_hourly
-```
+## What this part does
 
-### Core Marts
-
-The core mart layer provides reusable analytical models.
-
-Examples:
-
-```text
-dim_symbols
-dim_exchanges
-dim_time
-fact_crypto_features_hourly
-```
+This document explains the full crypto analytics and ML signal platform at a beginner-friendly level. The project is an analytics and ML signal platform, not a trading bot, not financial advice, and not automated trading infrastructure.
 
-### Dashboard Marts
+It connects ingestion, storage, dbt modeling, orchestration, runtime infrastructure, CI/CD, monitoring, and conservative ML workflows into one portfolio-grade system.
 
-The dashboard mart layer provides Looker-ready datasets.
+For a visual tour, open the static [Interactive Project Explorer](interactive/index.html).
 
-Examples:
+## Recommended Reading Path
 
-```text
-mart_dashboard_kpi_latest
-mart_dashboard_ai_signal_hourly
-mart_dashboard_market_overview_hourly
-mart_dashboard_derivatives_risk_hourly
-mart_dashboard_liquidity_risk_daily
-mart_dashboard_macro_etf_daily
-mart_dashboard_data_freshness
-```
+1. [Project README](../README.md)
+2. [Architecture](architecture.md)
+3. [Interactive Project Explorer](interactive/index.html)
+4. [Batch Pipeline](batch_pipeline.md)
+5. [Streaming Pipeline](streaming_pipeline.md)
+6. [dbt Models](dbt_models.md)
+7. [ML and MLOps](ml_mLOps.md)
+8. [Kestra Orchestration](kestra_orchestration.md)
+9. [K8s / GKE Runtime](k8s_gke_runtime.md)
+10. [Terraform Infrastructure](terraform_infrastructure.md)
+11. [CI/CD Gates](ci_cd_gates.md)
+12. [Production Boundaries](production_boundaries.md)
+13. [Repository Map](repository_map.md)
 
-### ML Marts
+## Where it lives
 
-The ML mart layer provides model-ready features, labels, training datasets, prediction inputs, and monitoring tables.
+The architecture is implemented across the repository rather than in one service. The main areas are `local_scripts/`, `dbt_transform/`, `ml/`, `kestra/`, `docker/`, `k8s/`, `helm/`, `terraform/`, `.github/`, and `docs/`.
 
-Examples:
+## How it fits into the full platform
 
-```text
-mart_ml_features_hourly
-mart_ml_labels_hourly
-mart_ml_training_dataset_hourly
-mart_ml_prediction_input_latest
-mart_ml_predictions_latest
-mart_ml_model_metrics
-mart_ml_feature_quality_daily
-mart_ml_label_distribution_daily
-mart_ml_naive_baseline_metrics
-```
+The platform starts with external market and context data. Batch ingestion is the strongest historical path, while streaming is a lower-latency experimental/freshness path. Curated data lands in cloud storage and BigQuery-oriented layers, dbt builds analytics and ML marts, Kestra orchestrates the workflows, GKE/Kubernetes can run production-style jobs, Terraform describes infrastructure, and CI/CD gates keep runtime changes intentional.
 
----
+Reliable 5-year backfill is currently strongest for Binance trades, ETF indicators, macro indicators, and funding data. Other sources are partial, experimental, or not fully live-ready.
 
-## ML Architecture
+## Main flow
 
-### Training
+1. External sources provide market, derivatives, macro, ETF, sentiment, and operational data.
+2. Batch and streaming components ingest or prepare source data.
+3. Storage and warehouse layers support GCS, BigLake/Iceberg concepts, and BigQuery models.
+4. dbt transforms sources into staging, intermediate, core, dashboard, ML, and monitoring marts.
+5. Kestra orchestrates raw, dbt, ML, monitoring, quality, preview, and master flows.
+6. Docker images and K8s/GKE provide production-style runtime execution.
+7. ML jobs train or predict using a conservative feature contract and artifact-first defaults.
+8. CI/CD and Terraform keep deployment and infrastructure changes reviewable.
 
-```text
-mart_ml_training_dataset_hourly
-  -> train_model.py
-  -> model metrics written to BigQuery
-  -> model artifact written to GCS
-  -> latest_model.json updated
-```
+## Important files and folders
 
-The model training process uses an explicit feature contract:
+| Path | Purpose | Notes |
+| --- | --- | --- |
+| `README.md` | Portfolio-level overview | Start here for scope and current coverage. |
+| `docs/interactive/index.html` | Static project explorer | No backend or build step required. |
+| `local_scripts/batch` | Batch ingestion | Strongest mature ingestion path. |
+| `local_scripts/streaming` | Streaming experiments | Partial freshness-oriented path. |
+| `dbt_transform/crypto_dbt` | dbt project | BigQuery-oriented transformations and marts. |
+| `ml` | ML and MLOps code | Production defaults plus research-only scripts. |
+| `kestra/flows-gke` | Production-style orchestration flows | Runtime details belong in K8s/GKE docs. |
+| `docker` | Runtime Dockerfiles | Batch, dbt, and ML images. |
+| `k8s` and `helm/kestra/values-gke.yaml` | Kubernetes runtime support | RBAC, secret provider, and Helm values. |
+| `terraform` | Main infrastructure definitions | Do not commit secrets, state, or local credentials. |
+| `.github/workflows` | CI/CD workflows | Quality, Docker, Kestra deploy, cleanup, and PR gates. |
 
-```text
-ml/feature_list.yml
-```
+## Production boundary
 
-This file defines:
+The repository demonstrates production-style architecture and conservative production defaults, but it should not be described as a fully automated trading system. MLflow, Optuna, and MLflow Registry are optional and off by default. Research candidates such as subset9 and microstructure features remain manual/research candidates unless promoted through explicit review.
 
-* BigQuery source tables
-* Target column
-* Valid target classes
-* Numeric features
-* Categorical features
-* Training rules
-* Prediction rules
-* Artifact storage configuration
+## Safety notes
 
-### Model Artifact Storage
+- Do not run training, backfills, deploys, Docker builds, dbt cloud builds, or Terraform apply as part of documentation work.
+- Do not commit service account keys, `.env` files, `.tfstate`, secret-bearing `.tfvars`, local credentials, dbt `target/`, ML artifacts, streaming secrets, or generated logs.
+- Treat GCS, BigQuery, Registry, Cloud SQL, and GKE operations as intentional cloud actions with cost and access implications.
 
-Model artifacts are stored in GCS:
+## Read next
 
-```text
-gs://<bucket>/ml-artifacts/crypto_direction_lgbm_v1/
-```
-
-The latest model is tracked by:
-
-```text
-latest_model.json
-```
-
-This manifest points to the active `.joblib` model artifact.
-
-### Prediction
-
-```text
-mart_ml_prediction_input_latest
-  -> predict_latest.py
-  -> download latest model from GCS
-  -> generate predictions
-  -> write to ml_outputs.model_predictions
-  -> dbt mart_ml_predictions_latest
-```
-
-Prediction is designed to run after streaming/hourly input becomes available.
-
----
-
-## Dashboard Architecture
-
-Looker Studio reads from BigQuery marts.
-
-Dashboard pages:
-
-1. Executive Overview
-2. Market Overview
-3. Derivatives Risk
-4. Social, Liquidity, Macro, and ETF Risk
-5. ML Quality and Model Monitoring
-6. Pipeline and MLOps Overview
-
-Key dashboard goals:
-
-* Show current market condition
-* Monitor market regime and risk
-* Monitor derivatives and liquidity stress
-* Track data freshness
-* Track ML feature quality
-* Track model metrics and active artifact
-
----
-
-## Infrastructure as Code
-
-Terraform manages core GCP infrastructure, including:
-
-* GCS buckets
-* BigQuery datasets
-* BigLake/Iceberg-related resources
-* Networking resources
-* Artifact Registry repository
-* Service accounts and IAM resources
-
-Terraform state and variable files are intentionally excluded from Git.
+- [Batch Pipeline](batch_pipeline.md)
+- [dbt Models](dbt_models.md)
+- [ML and MLOps](ml_mLOps.md)
+- [K8s / GKE Runtime](k8s_gke_runtime.md)
+- [Terraform Infrastructure](terraform_infrastructure.md)

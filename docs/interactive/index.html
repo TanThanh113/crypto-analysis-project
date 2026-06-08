@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Crypto Analytics Project Explorer</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Project explorer navigation">
+        <div class="brand-block">
+          <p class="eyebrow">Project explorer</p>
+          <h1>Crypto Analytics Explorer</h1>
+          <p class="brand-copy">A recruiter-friendly map of the platform architecture, repo layout, and production boundaries.</p>
+        </div>
+        <nav class="tab-list" id="tabList" aria-label="Explorer tabs" role="tablist"></nav>
+        <div class="sidebar-note">
+          <span class="dot"></span>
+          <span>Static only: no backend, build step, training, deploy, or cloud write.</span>
+        </div>
+      </aside>
+
+      <main class="content" id="content">
+        <header class="hero-panel">
+          <div class="hero-copy">
+            <p class="eyebrow">Crypto analytics and ML signal platform</p>
+            <h2>Explore the platform architecture in minutes.</h2>
+            <p>
+              A static, recruiter-ready tour of the architecture, pipelines, dbt transformation layers, MLOps controls,
+              orchestration gates, and research-vs-production boundaries.
+            </p>
+          </div>
+          <div class="hero-action-panel">
+            <div class="hero-actions" id="heroActions" aria-label="Reference links">
+              <a href="../../README.md" data-project-path="README.md">Open README</a>
+              <a href="../architecture.md" data-project-path="docs/architecture.md">Open Architecture Docs</a>
+              <a href="../repository_map.md" data-project-path="docs/repository_map.md">Open Repo Map</a>
+              <a href="project_map.json" data-project-path="project_map.json">Open Project JSON</a>
+            </div>
+            <p class="hero-link-note" id="serveModeNote" hidden>
+              For local link testing, serve the repository root and open /docs/interactive/.
+            </p>
+          </div>
+        </header>
+
+        <section class="status-strip" aria-label="Project scope notes">
+          <div>
+            <strong>Scope</strong>
+            <span>Analytics + ML signals, not trading automation</span>
+          </div>
+          <div>
+            <strong>Data confidence</strong>
+            <span>Strongest for Binance trades, ETF, Macro, Funding</span>
+          </div>
+          <div>
+            <strong>Production boundary</strong>
+            <span>Artifact-first ML; MLflow / Optuna / Registry optional</span>
+          </div>
+        </section>
+
+        <div class="data-mode" id="dataMode" hidden></div>
+        <section id="app" aria-live="polite"></section>
+      </main>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>
