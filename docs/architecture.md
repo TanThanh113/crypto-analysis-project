@@ -10,7 +10,7 @@ For a visual tour, open the static [Interactive Project Explorer](interactive/in
 
 ## Recommended Reading Path
 
-1. [Project README](../README.md)
+1. [Project README](https://github.com/TanThanh113/crypto-analysis-project/blob/main/README.md)
 2. [Architecture](architecture.md)
 3. [Interactive Project Explorer](interactive/index.html)
 4. [Batch Pipeline](batch_pipeline.md)

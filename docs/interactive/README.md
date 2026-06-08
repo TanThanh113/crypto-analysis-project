@@ -69,4 +69,13 @@ The page complements:
 - `docs/production_boundaries.md`
 - `docs/codebase_knowledge_graph.md`
 
+## Published GitHub Pages Layout
+
+When deployed by the GitHub Pages workflow:
+
+- `/` opens the root project documentation landing page.
+- `/docs/` opens the MkDocs-rendered documentation site.
+- `/docs/interactive/` opens this static interactive explorer.
+- `/dbt/` opens generated dbt documentation.
+
 Understand-Anything is documented only as an optional future exploration layer. This phase does not parse `.understand-anything/knowledge-graph.json`.

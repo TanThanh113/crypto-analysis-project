@@ -7,6 +7,7 @@ on:
     paths:
       - "README.md"
       - "docs/**"
+      - "mkdocs.yml"
       - "dbt_transform/**"
       - ".github/workflows/deploy-dbt-docs.yml"
   workflow_dispatch:
@@ -36,6 +37,16 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install documentation dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r docs/requirements-docs.txt
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -56,22 +67,18 @@ jobs:
           uv run dbt deps
           uv run dbt docs generate --no-partial-parse
 
-      - name: Build combined documentation site
+      - name: Build MkDocs site
         run: |
           rm -rf site
-          mkdir -p site/dbt
-          mkdir -p site/docs
+          mkdocs build --strict
 
-          # Generated dbt docs live under /dbt/
+      - name: Copy generated dbt docs
+        run: |
+          mkdir -p site/dbt
           cp -a dbt_transform/crypto_dbt/target/. site/dbt/
 
-          # Project docs and interactive explorer keep repo-like paths under /docs/
-          cp -a docs/. site/docs/
-
-          # Root README is copied so /README.md works from the interactive explorer
-          cp README.md site/README.md
-
-          # Landing page at /
+      - name: Create root landing page
+        run: |
           cat > site/index.html <<'HTML'
           <!doctype html>
           <html lang="en">
@@ -132,7 +139,7 @@ jobs:
                   margin: 0 0 14px;
                   font-size: clamp(2rem, 5vw, 3.6rem);
                   line-height: 1.02;
-                  letter-spacing: -0.04em;
+                  letter-spacing: 0;
                 }
 
                 p {
@@ -201,24 +208,24 @@ jobs:
                   </p>
 
                   <div class="grid">
+                    <a class="card" href="./docs/">
+                      <strong>Project Documentation Site</strong>
+                      <span>MkDocs-rendered guides for architecture, pipelines, dbt layers, ML/MLOps, Kestra, CI/CD, infrastructure, and runbooks.</span>
+                    </a>
+
                     <a class="card" href="./docs/interactive/">
                       <strong>Interactive Project Explorer</strong>
                       <span>Recruiter-friendly guide to Batch, Streaming, dbt, ML/MLOps, Kestra, K8s/GKE, Terraform, CI/CD, and production boundaries.</span>
                     </a>
 
                     <a class="card" href="./dbt/">
-                      <strong>dbt Docs</strong>
+                      <strong>Generated dbt Docs</strong>
                       <span>Generated dbt documentation with model lineage, sources, columns, and transformation metadata.</span>
                     </a>
 
-                    <a class="card" href="./docs/architecture.md">
-                      <strong>Architecture Guide</strong>
-                      <span>Beginner-friendly written overview of how the platform fits together.</span>
-                    </a>
-
-                    <a class="card" href="./README.md">
-                      <strong>Project README</strong>
-                      <span>Top-level overview, scope, safety notes, and recommended reading path.</span>
+                    <a class="card" href="https://github.com/TanThanh113/crypto-analysis-project">
+                      <strong>GitHub Repository</strong>
+                      <span>Source code, workflow definitions, dbt project files, orchestration specs, infrastructure, and reviewer context.</span>
                     </a>
                   </div>
 

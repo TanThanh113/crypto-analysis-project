@@ -1,0 +1,66 @@
+site_name: Crypto Analytics Project Docs
+site_description: Static documentation site for the Crypto Analytics and ML signal platform.
+site_url: https://tanthanh113.github.io/crypto-analysis-project/docs/
+repo_url: https://github.com/TanThanh113/crypto-analysis-project
+repo_name: TanThanh113/crypto-analysis-project
+
+docs_dir: docs
+site_dir: site/docs
+exclude_docs: |
+  interactive/README.md
+
+theme:
+  name: material
+  language: en
+  palette:
+    scheme: default
+    primary: teal
+    accent: cyan
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - toc.follow
+    - search.highlight
+    - search.share
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+
+nav:
+  - Home: index.md
+  - Architecture:
+      - Project Architecture: architecture.md
+      - Production Architecture: production-architecture.md
+      - K8s / GKE Runtime: k8s_gke_runtime.md
+      - Terraform Infrastructure: terraform_infrastructure.md
+  - Pipelines:
+      - Batch Pipeline: batch_pipeline.md
+      - Streaming Pipeline: streaming_pipeline.md
+      - dbt Transformation Layers: dbt_models.md
+      - Kestra Orchestration: kestra_orchestration.md
+  - ML and Operations:
+      - ML and MLOps Lifecycle: ml_mLOps.md
+      - CI/CD and Deployment Gates: ci_cd_gates.md
+      - Production Boundaries: production_boundaries.md
+      - Operations Runbook: runbook.md
+      - Production Runbook: production-runbook.md
+  - Reference:
+      - Repository Map: repository_map.md
+      - Optional AI Codebase Map: codebase_knowledge_graph.md
+      - Kafka Connect Keyless Auth: kafka-connect-keyless-auth.md
+      - Kestra GKE Rollback: kestra-gke-rollback.md
+      - Post-Mortem: post-mortems/incident-2026-05-failed-freshness.md
