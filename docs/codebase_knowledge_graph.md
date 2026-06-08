@@ -44,4 +44,4 @@ Understand-Anything is optional and not part of the runtime, training, predictio
 
 - [Architecture](architecture.md)
 - [Repository Map](repository_map.md)
-- [Interactive Explorer README](interactive/README.md)
+- [Interactive Project Explorer](interactive/index.html)
