@@ -12,6 +12,8 @@ This repository demonstrates how raw market, derivatives, liquidity, macro, ETF,
 
 The end-to-end architecture is documented in [docs/architecture.md](docs/architecture.md), with the static [Interactive Project Explorer](docs/interactive/index.html) as the visual reviewer guide.
 
+![Interactive Project Explorer](docs/assets/screenshots/interactive-explorer.png)
+
 ---
 
 ## Interactive Project Explorer
@@ -19,6 +21,14 @@ The end-to-end architecture is documented in [docs/architecture.md](docs/archite
 Open [docs/interactive/index.html](docs/interactive/index.html) for a static visual guide aimed at recruiters and reviewers. The Overview tab includes a data-driven architecture map backed by `docs/interactive/architecture_map.json`. It uses plain HTML/CSS/JS, requires no backend, npm install, or build step, and complements the deeper architecture notes in [docs/architecture.md](docs/architecture.md).
 
 ---
+
+## Project Documentation
+
+> 📑 Project Documentation Hub: https://tanthanh113.github.io/crypto-analysis-project/
+> 
+> 📚 Documentation site: https://tanthanh113.github.io/crypto-analysis-project/docs/  
+> 🧭 Interactive explorer: https://tanthanh113.github.io/crypto-analysis-project/docs/interactive/  
+> 📊 dbt docs: https://tanthanh113.github.io/crypto-analysis-project/dbt/
 
 ## Recommended Reading Path
 
