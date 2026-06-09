@@ -23,7 +23,7 @@ resource "google_service_account_key" "grafana_key" {
   service_account_id = google_service_account.grafana_reader.name
 }
 
-Extract JSON Key files directly from RAM (Do not save to hard drive for security purposes)
+# Extract JSON Key files directly from RAM (Do not save to hard drive for security purposes)
 locals {
   sa_key_json = jsondecode(base64decode(google_service_account_key.grafana_key.private_key))
 }
@@ -37,7 +37,7 @@ locals {
 resource "grafana_data_source" "bigquery" {
   type = "grafana-bigquery-datasource"
   name = "GCP-BigQuery-Crypto"
-  uid  = "gcp_bq_crypto_uid" Static ID for easy identification of JSON files.
+  uid  = "gcp_bq_crypto_uid" # Static ID for easy identification of JSON files.
 
   json_data_encoded = jsonencode({
     authenticationType = "jwt"
@@ -80,6 +80,6 @@ output "grafana_dashboard_url" {
 }
 
 output "grafana_datasource_uid" {
-  description = "UID của BigQuery Data Source (Used to replace the JSON file if you get a "No Data" error)"
+  description = "UID của BigQuery Data Source (Used to replace the JSON file if you get a No Data error)"
   value       = grafana_data_source.bigquery.uid
 }

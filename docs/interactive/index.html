@@ -8,9 +8,13 @@
   </head>
   <body>
     <a class="skip-link" href="#content">Skip to content</a>
-    <div class="app-shell">
-      <aside class="sidebar" aria-label="Project explorer navigation">
+    <div class="app-shell" id="appShell">
+      <aside class="sidebar" id="sidebar" aria-label="Project explorer navigation">
         <div class="brand-block">
+          <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-controls="sidebar" aria-expanded="false">
+            <span class="sidebar-toggle-icon" aria-hidden="true">☰</span>
+            <span class="sidebar-toggle-text">Expand</span>
+          </button>
           <p class="eyebrow">Project explorer</p>
           <h1>Crypto Analytics Explorer</h1>
           <p class="brand-copy">A recruiter-friendly map of the platform architecture, repo layout, and production boundaries.</p>
@@ -34,13 +38,13 @@
           </div>
           <div class="hero-action-panel">
             <div class="hero-actions" id="heroActions" aria-label="Reference links">
-              <a href="../../README.md" data-project-path="README.md">Open README</a>
-              <a href="../architecture.md" data-project-path="docs/architecture.md">Open Architecture Docs</a>
-              <a href="../repository_map.md" data-project-path="docs/repository_map.md">Open Repo Map</a>
+              <a href="../" data-project-path="README.md">Open Project Docs</a>
+              <a href="../architecture/" data-project-path="docs/architecture.md">Open Architecture Docs</a>
+              <a href="../repository_map/" data-project-path="docs/repository_map.md">Open Repo Map</a>
               <a href="project_map.json" data-project-path="project_map.json">Open Project JSON</a>
             </div>
             <p class="hero-link-note" id="serveModeNote" hidden>
-              For local link testing, serve the repository root and open /docs/interactive/.
+              For route-accurate link testing, use mkdocs serve or the full Pages artifact preview.
             </p>
           </div>
         </header>

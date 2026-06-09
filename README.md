@@ -16,7 +16,7 @@ The end-to-end architecture is documented in [docs/architecture.md](docs/archite
 
 ## Interactive Project Explorer
 
-Open [docs/interactive/index.html](docs/interactive/index.html) for a static visual guide aimed at recruiters and reviewers. It uses plain HTML/CSS/JS, requires no backend, npm install, or build step, and complements the deeper architecture notes in [docs/architecture.md](docs/architecture.md).
+Open [docs/interactive/index.html](docs/interactive/index.html) for a static visual guide aimed at recruiters and reviewers. The Overview tab includes a data-driven architecture map backed by `docs/interactive/architecture_map.json`. It uses plain HTML/CSS/JS, requires no backend, npm install, or build step, and complements the deeper architecture notes in [docs/architecture.md](docs/architecture.md).
 
 ---
 

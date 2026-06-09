@@ -1,0 +1,982 @@
+{
+  "metadata": {
+    "title": "Interactive Architecture Map",
+    "summary": "A data-driven, recruiter-friendly map of the crypto analytics and ML signal platform.",
+    "last_curated": "2026-06-09",
+    "scope_notes": [
+      "Documentation-only. This map does not run ingestion, training, deployment, or cloud writes.",
+      "This is an analytics and ML signal platform, not a trading bot.",
+      "Batch coverage is strongest for Binance trades, ETF indicators, macro indicators, and funding data.",
+      "MLflow, Optuna, and Registry are optional and off by default."
+    ]
+  },
+  "reference_assets": [
+    {
+      "label": "draw.io source",
+      "path": "docs/interactive/reference/architecture-main.drawio",
+      "note": "Reference wireframe used to curate this interactive map."
+    },
+    {
+      "label": "draw.io SVG export",
+      "path": "docs/interactive/reference/architecture-main.drawio.svg",
+      "note": "Reference SVG export. The interactive page renders its own HTML/CSS map instead of embedding this as the main UI."
+    }
+  ],
+  "pipeline": {
+    "stages": [
+      {
+        "id": "sources",
+        "label": "Sources"
+      },
+      {
+        "id": "ingestion",
+        "label": "Ingestion"
+      },
+      {
+        "id": "storage",
+        "label": "Storage"
+      },
+      {
+        "id": "transform",
+        "label": "Transform"
+      },
+      {
+        "id": "ml_outputs",
+        "label": "ML / Outputs"
+      },
+      {
+        "id": "monitoring",
+        "label": "Monitoring / Dashboard"
+      }
+    ],
+    "rows": [
+      {
+        "id": "primary",
+        "label": "Primary data flow",
+        "summary": "Trusted batch path from sources through validation, storage, dbt, ML, and outputs.",
+        "columns": [
+          ["external_sources"],
+          ["batch_collectors", "backfill_scripts", "validation_rules"],
+          ["gcs_raw", "iceberg_biglake", "bigquery_tables"],
+          ["dbt_layers", "dbt_marts"],
+          ["feature_contract", "ml_training", "ml_prediction"],
+          ["monitoring_quality", "dashboard_outputs"]
+        ]
+      },
+      {
+        "id": "streaming",
+        "label": "Streaming branch",
+        "summary": "Lower-latency freshness branch that rejoins warehouse/dbt and monitoring.",
+        "columns": [
+          ["external_sources"],
+          ["streaming_producers", "kafka_redpanda", "flink_transforms"],
+          ["dead_letter", "bigquery_tables"],
+          ["dbt_layers"],
+          [],
+          ["monitoring_quality"]
+        ]
+      }
+    ],
+    "control_plane": {
+      "label": "Operational control plane",
+      "summary": "Orchestration, runtime, identity, infrastructure, and deployment gates that support the data flow.",
+      "nodes": ["kestra_flows", "gke_runtime", "docker_images", "workload_identity", "terraform_infra", "cicd_gates"]
+    },
+    "short_titles": {
+      "external_sources": "External Sources",
+      "batch_collectors": "Batch",
+      "backfill_scripts": "Backfill",
+      "validation_rules": "Validation",
+      "streaming_producers": "Producers",
+      "kafka_redpanda": "Kafka",
+      "flink_transforms": "Flink",
+      "dead_letter": "Dead Letter",
+      "gcs_raw": "GCS Landing",
+      "iceberg_biglake": "Iceberg",
+      "bigquery_tables": "BigQuery",
+      "dbt_layers": "dbt Layers",
+      "dbt_marts": "dbt Marts",
+      "feature_contract": "Feature Contract",
+      "ml_training": "Training",
+      "ml_prediction": "Prediction",
+      "optional_mlops": "Optional MLOps",
+      "research_candidates": "Research Features",
+      "monitoring_quality": "Monitoring",
+      "dashboard_outputs": "Dashboard",
+      "kestra_flows": "Kestra",
+      "gke_runtime": "GKE",
+      "docker_images": "Artifact Registry",
+      "workload_identity": "IAM",
+      "terraform_infra": "Terraform",
+      "cicd_gates": "CI/CD Gates"
+    },
+    "flow_paths": {
+      "batch": ["external_sources", "batch_collectors", "backfill_scripts", "validation_rules", "gcs_raw", "iceberg_biglake", "bigquery_tables", "dbt_layers", "dbt_marts", "feature_contract", "ml_training", "ml_prediction", "monitoring_quality", "dashboard_outputs"],
+      "streaming": ["external_sources", "streaming_producers", "kafka_redpanda", "flink_transforms", "dead_letter", "bigquery_tables", "dbt_layers", "monitoring_quality"],
+      "dbt": ["gcs_raw", "iceberg_biglake", "bigquery_tables", "dbt_layers", "dbt_marts", "feature_contract", "monitoring_quality", "dashboard_outputs"],
+      "ml": ["dbt_marts", "feature_contract", "ml_training", "ml_prediction", "optional_mlops", "monitoring_quality"],
+      "infra": ["terraform_infra", "gke_runtime", "docker_images", "workload_identity", "kestra_flows", "cicd_gates"]
+    }
+  },
+  "flows": [
+    {
+      "id": "all",
+      "label": "All",
+      "summary": "Show the full platform: sources, ingestion, streaming, storage, dbt, ML/MLOps, orchestration, runtime, monitoring, and CI/CD gates."
+    },
+    {
+      "id": "batch",
+      "label": "Batch",
+      "summary": "Trusted historical ingestion and validation path. Strongest 5-year backfill coverage is currently Binance trades, ETF, macro, and funding."
+    },
+    {
+      "id": "streaming",
+      "label": "Streaming",
+      "summary": "Lower-latency producer, Kafka/Redpanda, Flink, sink, and dead-letter path. Coverage is partial and experimental compared with batch."
+    },
+    {
+      "id": "dbt",
+      "label": "dbt",
+      "summary": "Warehouse transformation path from raw/curated data into staging, intermediate, marts, dashboard, monitoring, and ML-ready models."
+    },
+    {
+      "id": "ml",
+      "label": "ML/MLOps",
+      "summary": "Conservative artifact-first ML workflow with explicit feature contracts. MLflow, Optuna, and Registry stay optional/off by default."
+    },
+    {
+      "id": "infra",
+      "label": "Infra/Runtime",
+      "summary": "Runtime, infrastructure, identity, container image, CI/CD, and Kestra gates that keep operational work explicit and reviewable."
+    }
+  ],
+  "groups": [
+    {
+      "id": "sources",
+      "title": "Sources",
+      "summary": "External market, ETF, macro, funding, sentiment, and experimental context sources.",
+      "nodes": [
+        {
+          "id": "external_sources",
+          "title": "External Data Sources",
+          "shortTitle": "External Sources",
+          "canvasSummary": "Market, ETF, macro, funding, sentiment, and context feeds.",
+          "summary": "Market, derivatives, ETF, macro, funding, sentiment, and operational context feeds enter through batch collectors or streaming producers.",
+          "status": "mixed",
+          "flows": ["batch", "streaming"],
+          "what_it_does": "Defines the upstream data universe the platform can ingest and transform.",
+          "where_it_lives": "Collector and producer code live under batch and streaming areas.",
+          "why_it_matters": "Coverage quality controls which downstream dbt marts and ML features are safe to interpret.",
+          "boundary": "Reliable 5-year backfill is strongest for Binance trades, ETF, macro, and funding. Other sources are partial, experimental, or not fully live-ready.",
+          "paths": ["local_scripts/batch", "local_scripts/streaming/producer"],
+          "docs": [
+            {
+              "label": "Architecture",
+              "href": "../architecture/"
+            },
+            {
+              "label": "Production Boundaries",
+              "href": "../production_boundaries/"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ingestion",
+      "title": "Ingestion",
+      "summary": "Batch collectors, backfills, and validation controls.",
+      "nodes": [
+        {
+          "id": "batch_collectors",
+          "title": "Batch Collectors",
+          "shortTitle": "Batch",
+          "canvasSummary": "Primary trusted historical ingestion path.",
+          "summary": "Primary historical ingestion path for trusted and experimental batch sources.",
+          "status": "production-style",
+          "flows": ["batch"],
+          "what_it_does": "Collects raw source data for downstream storage, dbt, monitoring, and ML preparation.",
+          "where_it_lives": "Main batch ingestion modules live under local_scripts/batch.",
+          "why_it_matters": "This is the strongest historical path and the safest starting point for reviewer evaluation.",
+          "boundary": "Backfills and cloud-write collectors should run only when intentionally configured.",
+          "paths": ["local_scripts/batch"],
+          "docs": [
+            {
+              "label": "Batch Pipeline",
+              "href": "../batch_pipeline/"
+            }
+          ]
+        },
+        {
+          "id": "backfill_scripts",
+          "title": "Backfill Scripts",
+          "shortTitle": "Backfill",
+          "canvasSummary": "Selected historical loaders for trusted sources.",
+          "summary": "Historical loaders for selected trusted sources.",
+          "status": "controlled",
+          "flows": ["batch"],
+          "what_it_does": "Supports intentional historical rebuilds and data coverage checks.",
+          "where_it_lives": "Backfill entrypoints live under local_scripts/batch/backfill.",
+          "why_it_matters": "They explain the 5-year coverage story without requiring reviewers to run expensive jobs.",
+          "boundary": "Do not run backfills as part of docs work. They can be expensive and may write to cloud targets.",
+          "paths": ["local_scripts/batch/backfill"],
+          "docs": [
+            {
+              "label": "Batch Pipeline",
+              "href": "../batch_pipeline/"
+            }
+          ]
+        },
+        {
+          "id": "validation_rules",
+          "title": "Validation Rules",
+          "shortTitle": "Validation",
+          "canvasSummary": "Schema, freshness, and quality checks.",
+          "summary": "Rule-based validation and quality-audit specs before downstream modeling.",
+          "status": "production-style",
+          "flows": ["batch", "dbt", "infra"],
+          "what_it_does": "Checks schema, freshness, data-quality, and pipeline assumptions before analytics or ML use.",
+          "where_it_lives": "Validation code and specs live under local_scripts/batch/validation and local_scripts/batch/quality_audit/specs.",
+          "why_it_matters": "Validation is the bridge between raw ingestion and trustworthy marts/signals.",
+          "boundary": "Validation docs are safe to read. Validation runs can depend on configured data targets.",
+          "paths": ["local_scripts/batch/validation", "local_scripts/batch/quality_audit/specs"],
+          "docs": [
+            {
+              "label": "Batch Pipeline",
+              "href": "../batch_pipeline/"
+            },
+            {
+              "label": "CI/CD Gates",
+              "href": "../ci_cd_gates/"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "streaming",
+      "title": "Streaming",
+      "summary": "Lower-latency freshness path with Kafka/Redpanda, Flink, sinks, and dead-letter handling.",
+      "nodes": [
+        {
+          "id": "streaming_producers",
+          "title": "Streaming Producers",
+          "shortTitle": "Producers",
+          "canvasSummary": "Lower-latency event producers.",
+          "summary": "Producer layer for lower-latency market, sentiment, and context experiments.",
+          "status": "experimental",
+          "flows": ["streaming"],
+          "what_it_does": "Publishes event-style data for streaming transformations and freshness experiments.",
+          "where_it_lives": "Producer code lives under local_scripts/streaming/producer.",
+          "why_it_matters": "It demonstrates a streaming architecture path without claiming full live-readiness.",
+          "boundary": "Streaming sources are partial/experimental and should not be treated as fully production-live coverage.",
+          "paths": ["local_scripts/streaming/producer"],
+          "docs": [
+            {
+              "label": "Streaming Pipeline",
+              "href": "../streaming_pipeline/"
+            }
+          ]
+        },
+        {
+          "id": "kafka_redpanda",
+          "title": "Kafka / Redpanda",
+          "shortTitle": "Kafka",
+          "canvasSummary": "Broker layer for streaming events.",
+          "summary": "Broker-oriented local/runtime surface for event transport.",
+          "status": "experimental",
+          "flows": ["streaming", "infra"],
+          "what_it_does": "Provides the message backbone for streaming producers and transformations.",
+          "where_it_lives": "Streaming compose and supporting scripts live under local_scripts/streaming.",
+          "why_it_matters": "It shows how the lower-latency path would be wired without requiring cloud deployment.",
+          "boundary": "This is not required for batch/dbt/ML documentation review.",
+          "paths": ["local_scripts/streaming/docker-compose.yaml", "local_scripts/streaming/scripts"],
+          "docs": [
+            {
+              "label": "Streaming Pipeline",
+              "href": "../streaming_pipeline/"
+            }
+          ]
+        },
+        {
+          "id": "flink_transforms",
+          "title": "Flink Transformations",
+          "shortTitle": "Flink",
+          "canvasSummary": "Transforms freshness-oriented events.",
+          "summary": "Streaming transformation logic for freshness-oriented events.",
+          "status": "experimental",
+          "flows": ["streaming"],
+          "what_it_does": "Transforms streaming events before they move toward sinks, alerts, or dead-letter handling.",
+          "where_it_lives": "Transformation code lives under local_scripts/streaming/logic_crypto_streaming.",
+          "why_it_matters": "It separates raw event capture from downstream analytics-oriented event shape.",
+          "boundary": "Streaming transformations are lower-latency candidates and should be validated before ML use.",
+          "paths": ["local_scripts/streaming/logic_crypto_streaming"],
+          "docs": [
+            {
+              "label": "Streaming Pipeline",
+              "href": "../streaming_pipeline/"
+            }
+          ]
+        },
+        {
+          "id": "dead_letter",
+          "title": "Dead Letter Handling",
+          "shortTitle": "Dead Letter",
+          "canvasSummary": "Isolates malformed streaming records.",
+          "summary": "Failure isolation for malformed or rejected streaming records.",
+          "status": "guardrail",
+          "flows": ["streaming", "infra"],
+          "what_it_does": "Keeps problematic events visible without silently poisoning downstream tables.",
+          "where_it_lives": "Streaming logic and sink specs support dead-letter handling.",
+          "why_it_matters": "It makes failure modes reviewable in a streaming design.",
+          "boundary": "Dead-letter handling documents reliability intent; it does not make partial streaming sources fully live-ready.",
+          "paths": ["local_scripts/streaming/logic_crypto_streaming", "local_scripts/streaming/scripts"],
+          "docs": [
+            {
+              "label": "Streaming Pipeline",
+              "href": "../streaming_pipeline/"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "storage",
+      "title": "Storage",
+      "summary": "Cloud-oriented landing and warehouse surfaces used by dbt and analytics.",
+      "nodes": [
+        {
+          "id": "gcs_raw",
+          "title": "GCS Raw / Landing",
+          "shortTitle": "GCS Landing",
+          "canvasSummary": "Object-storage landing zone for batch outputs.",
+          "summary": "Cloud-storage landing concept for raw and curated batch outputs.",
+          "status": "infra-defined",
+          "flows": ["batch", "infra"],
+          "what_it_does": "Represents the object-storage landing zone for batch outputs and downstream loaders.",
+          "where_it_lives": "Terraform bucket definitions and batch loaders describe this layer.",
+          "why_it_matters": "Storage boundaries explain where cloud writes would happen when explicitly configured.",
+          "boundary": "Do not write to GCS as part of documentation work.",
+          "paths": ["terraform/gcs_buckets.tf", "local_scripts/batch"],
+          "docs": [
+            {
+              "label": "Terraform Infrastructure",
+              "href": "../terraform_infrastructure/"
+            },
+            {
+              "label": "Batch Pipeline",
+              "href": "../batch_pipeline/"
+            }
+          ]
+        },
+        {
+          "id": "iceberg_biglake",
+          "title": "Iceberg / BigLake",
+          "shortTitle": "Iceberg",
+          "canvasSummary": "Optional lakehouse-oriented curated path.",
+          "summary": "Lakehouse-oriented path for curated storage workflows.",
+          "status": "optional",
+          "flows": ["batch", "dbt", "infra"],
+          "what_it_does": "Shows how curated data can move toward BigLake/Iceberg-style storage.",
+          "where_it_lives": "The loader path is local_scripts/batch/iceberg_loader.py.",
+          "why_it_matters": "It demonstrates cloud-native analytics design without making it mandatory for local review.",
+          "boundary": "Treat this as optional infrastructure-oriented functionality.",
+          "paths": ["local_scripts/batch/iceberg_loader.py"],
+          "docs": [
+            {
+              "label": "Batch Pipeline",
+              "href": "../batch_pipeline/"
+            }
+          ]
+        },
+        {
+          "id": "bigquery_tables",
+          "title": "BigQuery Tables",
+          "shortTitle": "BigQuery",
+          "canvasSummary": "Warehouse target for dbt, monitoring, and ML.",
+          "summary": "Warehouse target for streaming sinks, dbt transformations, monitoring, and dashboard marts.",
+          "status": "infra-defined",
+          "flows": ["streaming", "dbt", "infra"],
+          "what_it_does": "Provides the warehouse surface consumed by dbt models and downstream analytics.",
+          "where_it_lives": "Dataset definitions live in Terraform; dbt models define transformation layers.",
+          "why_it_matters": "BigQuery is the central analytics surface connecting ingestion, dbt, monitoring, dashboards, and ML features.",
+          "boundary": "Do not write to BigQuery during docs-only work.",
+          "paths": ["terraform/bigquery_datasets.tf", "dbt_transform/crypto_dbt/models"],
+          "docs": [
+            {
+              "label": "dbt Models",
+              "href": "../dbt_models/"
+            },
+            {
+              "label": "Terraform Infrastructure",
+              "href": "../terraform_infrastructure/"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "transform",
+      "title": "Transform",
+      "summary": "dbt layers that convert raw and curated inputs into reviewer-friendly marts.",
+      "nodes": [
+        {
+          "id": "dbt_layers",
+          "title": "dbt Layers",
+          "shortTitle": "dbt Layers",
+          "canvasSummary": "Normalizes sources into analysis-ready layers.",
+          "summary": "Staging, intermediate, marts, dashboard, monitoring, and ML-ready model layers.",
+          "status": "production-style",
+          "flows": ["dbt", "ml"],
+          "what_it_does": "Normalizes sources and publishes analysis-friendly tables for dashboards, monitoring, and ML.",
+          "where_it_lives": "dbt project code lives under dbt_transform/crypto_dbt.",
+          "why_it_matters": "dbt is the clean transformation boundary between ingestion/storage and analytics/ML consumers.",
+          "boundary": "dbt models are documentation-safe to inspect; running dbt against cloud targets is an intentional data operation.",
+          "paths": ["dbt_transform/crypto_dbt", "dbt_transform/crypto_dbt/models"],
+          "docs": [
+            {
+              "label": "dbt Models",
+              "href": "../dbt_models/"
+            }
+          ]
+        },
+        {
+          "id": "dbt_marts",
+          "title": "dbt Marts",
+          "shortTitle": "dbt Marts",
+          "canvasSummary": "Publishes analytics, ML, dashboard, and monitoring marts.",
+          "summary": "Analytics, dashboard, monitoring, and ML marts produced for consumers.",
+          "status": "production-style",
+          "flows": ["dbt", "ml"],
+          "what_it_does": "Publishes the curated model outputs that reviewers can reason about.",
+          "where_it_lives": "Marts live under dbt_transform/crypto_dbt/models/marts.",
+          "why_it_matters": "Marts show the final shape of platform analytics and ML features.",
+          "boundary": "Marts depend on source coverage; partial upstream sources should stay clearly marked.",
+          "paths": ["dbt_transform/crypto_dbt/models/marts"],
+          "docs": [
+            {
+              "label": "dbt Models",
+              "href": "../dbt_models/"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mlops",
+      "title": "ML/MLOps",
+      "summary": "Conservative artifact-first ML workflow with optional experiment tooling.",
+      "nodes": [
+        {
+          "id": "feature_contract",
+          "title": "Feature Contract",
+          "shortTitle": "Feature Contract",
+          "canvasSummary": "Conservative production-style feature boundary.",
+          "summary": "Explicit production-style feature boundary for training and prediction.",
+          "status": "production-default",
+          "flows": ["ml"],
+          "what_it_does": "Defines the conservative feature set used by production-style ML paths.",
+          "where_it_lives": "The contract lives in ml/feature_list.yml and related ML helpers.",
+          "why_it_matters": "It prevents research candidates from silently entering production-style predictions.",
+          "boundary": "Do not change ml/feature_list.yml for documentation-only work.",
+          "paths": ["ml/feature_list.yml", "ml/feature_contract.py"],
+          "docs": [
+            {
+              "label": "ML and MLOps",
+              "href": "../ml_mLOps/"
+            },
+            {
+              "label": "Production Boundaries",
+              "href": "../production_boundaries/"
+            }
+          ]
+        },
+        {
+          "id": "ml_training",
+          "title": "Training Workflow",
+          "shortTitle": "Training",
+          "canvasSummary": "Creates model artifacts when explicitly run.",
+          "summary": "Training entrypoint for artifact-first model creation.",
+          "status": "controlled",
+          "flows": ["ml", "infra"],
+          "what_it_does": "Trains models from curated feature inputs and writes artifacts when explicitly run.",
+          "where_it_lives": "Training code lives in ml/train_model.py.",
+          "why_it_matters": "It demonstrates MLOps design while keeping docs work separate from model changes.",
+          "boundary": "Do not run training for this documentation task.",
+          "paths": ["ml/train_model.py"],
+          "docs": [
+            {
+              "label": "ML and MLOps",
+              "href": "../ml_mLOps/"
+            }
+          ]
+        },
+        {
+          "id": "ml_prediction",
+          "title": "Prediction Workflow",
+          "shortTitle": "Prediction",
+          "canvasSummary": "Loads approved artifacts for ML signal prediction.",
+          "summary": "Artifact-first prediction path for conservative ML signals.",
+          "status": "production-style",
+          "flows": ["ml", "infra"],
+          "what_it_does": "Loads approved local artifacts and produces prediction outputs when explicitly run.",
+          "where_it_lives": "Prediction code lives in ml/predict_latest.py and model loading helpers.",
+          "why_it_matters": "It is the clearest line between analytics/ML signals and any trading misconception.",
+          "boundary": "This is not a trading bot and does not place orders.",
+          "paths": ["ml/predict_latest.py", "ml/model_loader.py"],
+          "docs": [
+            {
+              "label": "ML and MLOps",
+              "href": "../ml_mLOps/"
+            }
+          ]
+        },
+        {
+          "id": "optional_mlops",
+          "title": "Optional MLflow / Optuna / Registry",
+          "shortTitle": "Optional MLOps",
+          "canvasSummary": "Optional tracking, tuning, and registry helpers.",
+          "summary": "Experiment tracking, tuning, and registry helpers that remain optional/off by default.",
+          "status": "optional",
+          "flows": ["ml"],
+          "what_it_does": "Supports experiments, tuning, and registry-style workflows when intentionally enabled.",
+          "where_it_lives": "Optional helpers live in ml/mlflow_utils.py, ml/mlflow_registry.py, and ml/optuna_tuning.py.",
+          "why_it_matters": "It shows MLOps awareness without making remote tracking or registry access mandatory.",
+          "boundary": "MLflow, Optuna, and Registry are optional and off by default.",
+          "paths": ["ml/mlflow_utils.py", "ml/mlflow_registry.py", "ml/optuna_tuning.py"],
+          "docs": [
+            {
+              "label": "ML and MLOps",
+              "href": "../ml_mLOps/"
+            }
+          ]
+        },
+        {
+          "id": "research_candidates",
+          "title": "subset9 / Microstructure Candidates",
+          "shortTitle": "Research Features",
+          "canvasSummary": "Manual candidates outside production defaults.",
+          "summary": "Research/manual feature candidates that are not production defaults.",
+          "status": "research-only",
+          "flows": ["ml"],
+          "what_it_does": "Keeps exploratory feature ideas visible without promoting them into the conservative feature contract.",
+          "where_it_lives": "Research work lives under ml/research and related local research paths.",
+          "why_it_matters": "It prevents reviewers from confusing exploratory notebooks/scripts with production defaults.",
+          "boundary": "subset9 and microstructure features are research/manual candidates, not production default features.",
+          "paths": ["ml/research", "ml/tests"],
+          "docs": [
+            {
+              "label": "Production Boundaries",
+              "href": "../production_boundaries/"
+            },
+            {
+              "label": "ML and MLOps",
+              "href": "../ml_mLOps/"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "orchestration",
+      "title": "Orchestration",
+      "summary": "Kestra flows connect raw, dbt, ML, monitoring, quality, preview, and master workflows.",
+      "nodes": [
+        {
+          "id": "kestra_flows",
+          "title": "Kestra Orchestration",
+          "shortTitle": "Kestra",
+          "canvasSummary": "Coordinates reviewed pipeline workflows.",
+          "summary": "Workflow definitions for batch, streaming, dbt, ML, monitoring, quality, and master flows.",
+          "status": "production-style",
+          "flows": ["batch", "streaming", "dbt", "ml", "infra"],
+          "what_it_does": "Coordinates platform jobs and makes runtime execution explicit.",
+          "where_it_lives": "GKE-oriented flows live under kestra/flows-gke.",
+          "why_it_matters": "Kestra is where separate engineering pieces become reviewable workflows.",
+          "boundary": "Do not deploy or execute Kestra flows as part of docs work.",
+          "paths": ["kestra/flows-gke", "kestra/flows"],
+          "docs": [
+            {
+              "label": "Kestra Orchestration",
+              "href": "../kestra_orchestration/"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "runtime",
+      "title": "Runtime / Infrastructure",
+      "summary": "GKE, Docker images, Workload Identity, Terraform, and CI/CD gates.",
+      "nodes": [
+        {
+          "id": "gke_runtime",
+          "title": "GKE / Kubernetes Runtime",
+          "shortTitle": "GKE",
+          "canvasSummary": "Container runtime surface for platform jobs.",
+          "summary": "Containerized runtime surface for production-style batch, dbt, ML, and Kestra jobs.",
+          "status": "infra-defined",
+          "flows": ["infra", "batch", "dbt", "ml"],
+          "what_it_does": "Provides the Kubernetes execution model for reviewed jobs.",
+          "where_it_lives": "Kubernetes manifests and Helm values live under k8s and helm/kestra.",
+          "why_it_matters": "It shows how local code can be packaged into a cloud runtime without running it during docs review.",
+          "boundary": "Do not deploy to GKE for this documentation task.",
+          "paths": ["k8s", "helm/kestra/values-gke.yaml"],
+          "docs": [
+            {
+              "label": "K8s / GKE Runtime",
+              "href": "../k8s_gke_runtime/"
+            }
+          ]
+        },
+        {
+          "id": "docker_images",
+          "title": "Docker Images / Artifact Registry",
+          "shortTitle": "Artifact Registry",
+          "canvasSummary": "Image packaging and registry support.",
+          "summary": "Container definitions and registry infrastructure for runtime jobs.",
+          "status": "infra-defined",
+          "flows": ["infra"],
+          "what_it_does": "Packages batch, dbt, and ML jobs into runtime images and defines registry infrastructure.",
+          "where_it_lives": "Dockerfiles live under docker; registry Terraform is terraform/artifact_registry.tf.",
+          "why_it_matters": "It demonstrates deployable boundaries while keeping image builds behind explicit gates.",
+          "boundary": "Do not build or push images for this docs task.",
+          "paths": ["docker", "terraform/artifact_registry.tf"],
+          "docs": [
+            {
+              "label": "K8s / GKE Runtime",
+              "href": "../k8s_gke_runtime/"
+            },
+            {
+              "label": "Terraform Infrastructure",
+              "href": "../terraform_infrastructure/"
+            }
+          ]
+        },
+        {
+          "id": "workload_identity",
+          "title": "Workload Identity / IAM",
+          "shortTitle": "IAM",
+          "canvasSummary": "Cloud identity boundary for runtime jobs.",
+          "summary": "Identity boundary for cloud-facing jobs.",
+          "status": "infra-defined",
+          "flows": ["infra"],
+          "what_it_does": "Defines how runtime jobs authenticate without embedding local secrets.",
+          "where_it_lives": "IAM and Kubernetes identity pieces live under terraform and k8s.",
+          "why_it_matters": "It is the security boundary between code review and cloud access.",
+          "boundary": "Do not put keys, tokens, or service-account secrets into docs.",
+          "paths": ["terraform/kestra_iam.tf", "k8s/kestra"],
+          "docs": [
+            {
+              "label": "Terraform Infrastructure",
+              "href": "../terraform_infrastructure/"
+            },
+            {
+              "label": "K8s / GKE Runtime",
+              "href": "../k8s_gke_runtime/"
+            }
+          ]
+        },
+        {
+          "id": "terraform_infra",
+          "title": "Terraform Infrastructure",
+          "shortTitle": "Terraform",
+          "canvasSummary": "Infrastructure definitions and cloud resources.",
+          "summary": "Cloud resources for datasets, buckets, registry, IAM, and runtime support.",
+          "status": "infra-defined",
+          "flows": ["infra"],
+          "what_it_does": "Describes infrastructure without applying it during docs review.",
+          "where_it_lives": "Terraform modules and resource files live under terraform and terraform-bootstrap.",
+          "why_it_matters": "It makes cloud-resource intent inspectable and gated.",
+          "boundary": "Do not run Terraform apply or commit state/secret tfvars.",
+          "paths": ["terraform/gcs_buckets.tf", "terraform/bigquery_datasets.tf", "terraform/artifact_registry.tf", "terraform/kestra_iam.tf", "terraform-bootstrap/main.tf"],
+          "docs": [
+            {
+              "label": "Terraform Infrastructure",
+              "href": "../terraform_infrastructure/"
+            }
+          ]
+        },
+        {
+          "id": "cicd_gates",
+          "title": "CI/CD and Deployment Gates",
+          "shortTitle": "CI/CD Gates",
+          "canvasSummary": "Review gates for docs, runtime, infra, and deploys.",
+          "summary": "GitHub Actions and repo guardrails for docs, dbt, Kestra, Docker, Terraform, and Pages.",
+          "status": "guardrail",
+          "flows": ["infra", "dbt", "ml", "batch"],
+          "what_it_does": "Keeps deployment and validation steps explicit and reviewable.",
+          "where_it_lives": "Workflows live under .github/workflows and guard scripts under .github/scripts and scripts.",
+          "why_it_matters": "It separates safe docs work from operational deploy/build actions.",
+          "boundary": "This documentation task should only run repo_guard, diff checks, JSON validation, and docs build.",
+          "paths": [".github/workflows", ".github/scripts", "scripts/repo_guard.py"],
+          "docs": [
+            {
+              "label": "CI/CD Gates",
+              "href": "../ci_cd_gates/"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "monitoring",
+      "title": "Monitoring / Dashboard",
+      "summary": "Monitoring marts, quality flows, dashboards, and reviewer-facing outputs.",
+      "nodes": [
+        {
+          "id": "monitoring_quality",
+          "title": "Monitoring and Quality",
+          "shortTitle": "Monitoring",
+          "canvasSummary": "Freshness, validation, and pipeline health signals.",
+          "summary": "Monitoring marts and quality flows for data freshness, validation, and operational checks.",
+          "status": "production-style",
+          "flows": ["batch", "dbt", "infra", "ml"],
+          "what_it_does": "Surfaces data-quality and pipeline health signals for reviewers/operators.",
+          "where_it_lives": "Monitoring dbt models and Kestra quality/monitoring flows live in dbt_transform and kestra.",
+          "why_it_matters": "It closes the loop between ingestion, transformation, ML, and operations.",
+          "boundary": "Monitoring output quality depends on upstream coverage and configured targets.",
+          "paths": ["dbt_transform/crypto_dbt/models/marts/monitoring", "kestra/flows-gke/monitoring", "kestra/flows-gke/quality"],
+          "docs": [
+            {
+              "label": "dbt Models",
+              "href": "../dbt_models/"
+            },
+            {
+              "label": "Kestra Orchestration",
+              "href": "../kestra_orchestration/"
+            }
+          ]
+        },
+        {
+          "id": "dashboard_outputs",
+          "title": "Dashboard / Looker / Grafana",
+          "shortTitle": "Dashboard",
+          "canvasSummary": "BI-oriented presentation of curated outputs.",
+          "summary": "Dashboard-facing marts and optional Grafana/Looker-oriented presentation surfaces.",
+          "status": "optional",
+          "flows": ["dbt", "infra"],
+          "what_it_does": "Presents curated analytics outputs for review and monitoring.",
+          "where_it_lives": "Dashboard marts and Grafana dashboard definitions live under dbt_transform and terraform-grafana/dashboards.",
+          "why_it_matters": "It gives reviewers a business-readable view of the transformed platform outputs.",
+          "boundary": "Dashboard infra may contain local state in working directories; do not expose secrets or state in docs.",
+          "paths": ["dbt_transform/crypto_dbt/models/marts/dashboard", "terraform-grafana/dashboards"],
+          "docs": [
+            {
+              "label": "dbt Models",
+              "href": "../dbt_models/"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "external_sources",
+      "to": "batch_collectors",
+      "flows": ["batch"],
+      "label": "collector input"
+    },
+    {
+      "from": "batch_collectors",
+      "to": "backfill_scripts",
+      "flows": ["batch"],
+      "label": "historical coverage"
+    },
+    {
+      "from": "batch_collectors",
+      "to": "validation_rules",
+      "flows": ["batch"],
+      "label": "quality checks"
+    },
+    {
+      "from": "validation_rules",
+      "to": "gcs_raw",
+      "flows": ["batch", "infra"],
+      "label": "validated landing"
+    },
+    {
+      "from": "batch_collectors",
+      "to": "iceberg_biglake",
+      "flows": ["batch", "infra"],
+      "label": "curated lake path"
+    },
+    {
+      "from": "external_sources",
+      "to": "streaming_producers",
+      "flows": ["streaming"],
+      "label": "event producers"
+    },
+    {
+      "from": "streaming_producers",
+      "to": "kafka_redpanda",
+      "flows": ["streaming"],
+      "label": "publish events"
+    },
+    {
+      "from": "kafka_redpanda",
+      "to": "flink_transforms",
+      "flows": ["streaming"],
+      "label": "consume topics"
+    },
+    {
+      "from": "flink_transforms",
+      "to": "dead_letter",
+      "flows": ["streaming", "infra"],
+      "label": "reject bad records"
+    },
+    {
+      "from": "flink_transforms",
+      "to": "bigquery_tables",
+      "flows": ["streaming", "dbt"],
+      "label": "sink curated events"
+    },
+    {
+      "from": "gcs_raw",
+      "to": "dbt_layers",
+      "flows": ["batch", "dbt"],
+      "label": "raw inputs"
+    },
+    {
+      "from": "iceberg_biglake",
+      "to": "dbt_layers",
+      "flows": ["batch", "dbt", "infra"],
+      "label": "curated inputs"
+    },
+    {
+      "from": "bigquery_tables",
+      "to": "dbt_layers",
+      "flows": ["batch", "streaming", "dbt"],
+      "label": "warehouse inputs"
+    },
+    {
+      "from": "dbt_layers",
+      "to": "dbt_marts",
+      "flows": ["dbt"],
+      "label": "publish marts"
+    },
+    {
+      "from": "dbt_marts",
+      "to": "feature_contract",
+      "flows": ["ml", "dbt"],
+      "label": "ML-ready features"
+    },
+    {
+      "from": "feature_contract",
+      "to": "ml_training",
+      "flows": ["ml"],
+      "label": "train with contract"
+    },
+    {
+      "from": "ml_training",
+      "to": "ml_prediction",
+      "flows": ["ml"],
+      "label": "artifact handoff"
+    },
+    {
+      "from": "ml_training",
+      "to": "optional_mlops",
+      "flows": ["ml"],
+      "label": "optional tracking"
+    },
+    {
+      "from": "research_candidates",
+      "to": "feature_contract",
+      "flows": ["ml"],
+      "label": "manual promotion only"
+    },
+    {
+      "from": "ml_prediction",
+      "to": "monitoring_quality",
+      "flows": ["ml", "infra"],
+      "label": "signal monitoring"
+    },
+    {
+      "from": "dbt_marts",
+      "to": "monitoring_quality",
+      "flows": ["dbt", "infra"],
+      "label": "health marts"
+    },
+    {
+      "from": "dbt_marts",
+      "to": "dashboard_outputs",
+      "flows": ["dbt", "infra"],
+      "label": "dashboard marts"
+    },
+    {
+      "from": "kestra_flows",
+      "to": "batch_collectors",
+      "flows": ["batch", "infra"],
+      "label": "orchestrate ingestion"
+    },
+    {
+      "from": "kestra_flows",
+      "to": "dbt_layers",
+      "flows": ["dbt", "infra"],
+      "label": "orchestrate dbt"
+    },
+    {
+      "from": "kestra_flows",
+      "to": "ml_training",
+      "flows": ["ml", "infra"],
+      "label": "orchestrate ML"
+    },
+    {
+      "from": "terraform_infra",
+      "to": "gke_runtime",
+      "flows": ["infra"],
+      "label": "runtime resources"
+    },
+    {
+      "from": "terraform_infra",
+      "to": "docker_images",
+      "flows": ["infra"],
+      "label": "registry support"
+    },
+    {
+      "from": "terraform_infra",
+      "to": "workload_identity",
+      "flows": ["infra"],
+      "label": "identity binding"
+    },
+    {
+      "from": "docker_images",
+      "to": "gke_runtime",
+      "flows": ["infra"],
+      "label": "run containers"
+    },
+    {
+      "from": "gke_runtime",
+      "to": "kestra_flows",
+      "flows": ["infra"],
+      "label": "execute task pods"
+    },
+    {
+      "from": "workload_identity",
+      "to": "kestra_flows",
+      "flows": ["infra"],
+      "label": "cloud auth"
+    },
+    {
+      "from": "cicd_gates",
+      "to": "docker_images",
+      "flows": ["infra"],
+      "label": "build gate"
+    },
+    {
+      "from": "cicd_gates",
+      "to": "kestra_flows",
+      "flows": ["infra", "batch", "dbt", "ml"],
+      "label": "deploy gate"
+    }
+  ],
+  "limitations": [
+    "This interactive map is documentation-only and does not execute repo code.",
+    "Reliable 5-year backfill is strongest for Binance trades, ETF, macro, and funding.",
+    "Other sources are partial, experimental, or not fully live-ready.",
+    "Streaming is a freshness path, not the primary trusted historical coverage path.",
+    "MLflow, Optuna, and Registry are optional/off by default.",
+    "subset9 and microstructure features are research/manual candidates, not production defaults."
+  ]
+}
