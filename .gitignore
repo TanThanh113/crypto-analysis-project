@@ -29,6 +29,10 @@ mlruns/
 *.joblib
 .pytest_cache/
 
+# Understand-Anything local scratch
+.understand-anything/intermediate/
+.understand-anything/diff-overlay.json
+
 # Secrets and credentials
 .env
 .env.*
