@@ -12,7 +12,7 @@ This repository demonstrates how raw market, derivatives, liquidity, macro, ETF,
 
 The end-to-end architecture is documented in [docs/architecture.md](docs/architecture.md), with the static [Interactive Project Explorer](docs/interactive/index.html) as the visual reviewer guide.
 
-![Interactive Project Explorer](docs/assets/screenshots/interactive-explorer.png)
+![Interactive Project Explorer](docs/interactive/reference/architecture-main.drawio.svg)
 
 ---
 
