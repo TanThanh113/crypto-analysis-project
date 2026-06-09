@@ -133,3 +133,8 @@ local_scripts/batch/backfill/**/*.jsonl
 !local_scripts/streaming/scripts/bq_alerts_sink.json
 !local_scripts/streaming/scripts/bq_candlestick_sink.json
 !local_scripts/streaming/scripts/bq_sentiment_sink.jsonml/.venv/
+
+# Understand-Anything local/generated output
+.understand-anything/
+docs/interactive/understand_anything/knowledge-graph.json
+docs/interactive/understand_anything/knowledge-graph.public.json
