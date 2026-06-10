@@ -41,7 +41,11 @@ Open [docs/interactive/index.html](docs/interactive/index.html) for a static vis
 > 
 > 📚 Documentation site: https://tanthanh113.github.io/crypto-analysis-project/docs/  
 > 🧭 Interactive explorer: https://tanthanh113.github.io/crypto-analysis-project/docs/interactive/  
-> 📊 dbt docs: https://tanthanh113.github.io/crypto-analysis-project/dbt/
+> 📊 dbt docs: https://tanthanh113.github.io/crypto-analysis-project/dbt/ 
+
+> 🗺️ Pipeline diagram [Open editable architecture diagram in diagrams.net](https://app.diagrams.net/#Uhttps%3A%2F%2Fraw.githubusercontent.com%2FTanThanh113%2Fcrypto-analysis-project%2Fmain%2Fdocs%2Finteractive%2Freference%2Farchitecture-main.drawio)
+
+> The `.drawio` source is stored in this repository. Viewers can open and edit their own copy in diagrams.net, but they cannot modify this repository unless they have write access.
 
 ## Recommended Reading Path
 
