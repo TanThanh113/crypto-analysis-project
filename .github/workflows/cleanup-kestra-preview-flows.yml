@@ -59,7 +59,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          python scripts/kestra_deploy_plan.py \
+          python .github/scripts/kestra_deploy_plan.py \
             --event-name pull_request \
             --enable-ml-kestra-deploy "${ENABLE_ML_KESTRA_DEPLOY:-false}" \
             --changed-files /tmp/changed-files.txt \
