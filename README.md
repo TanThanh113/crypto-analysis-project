@@ -1,4 +1,17 @@
-# Crypto Analytics and ML Signal Platform
+<h1 align="center">
+   Crypto Analytics and ML Signal Platform
+</h1>
+
+<h3 align="center">
+  End-to-end Crypto Data Engineering + MLOps Project
+</h3>
+
+    
+---
+
+<p align="center">
+  <i>Built with GCP | BigQuery | dbt | Kestra | Docker | Terraform | GitHub Actions | Looker Studio |  MLflow</i>
+</p>
 
 An end-to-end data engineering and MLOps project for crypto market analytics, risk monitoring, and directional signal research.
 
@@ -532,3 +545,20 @@ Do not expose secrets, service account keys, Looker credentials, private data, T
 - Implemented local research tooling for AutoML, feature diagnostics, ablation, keeper validation, and production readiness review.
 - Added PR-safe deployment patterns for Docker image builds and Kestra flow deployment.
 - Documented source coverage limitations and avoided overstating model quality or trading capability.
+
+## AI Assistance Disclosure
+
+This project was built, reviewed, and maintained by [TanThanh113](https://github.com/TanThanh113).
+
+AI tools, including ChatGPT and Codex, were used as learning and productivity assistants during development. The assistance was mainly used for:
+
+* explaining errors and debugging ideas
+* reviewing GitHub Actions, Terraform, dbt, Kestra, and MLOps workflow logic
+* drafting README, runbook, and pull request documentation
+* improving commit messages and pull request descriptions
+* suggesting safer CI/CD, cleanup, and deployment patterns
+
+All code, configuration, credentials, cloud resources, architecture decisions, and final changes were reviewed and accepted by the project owner before being committed.
+
+AI-generated suggestions may have been modified, tested, or rejected before inclusion in this repository.
+
