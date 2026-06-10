@@ -14,12 +14,80 @@ env:
   KESTRA_SERVER: http://127.0.0.1:8080
 
 jobs:
+  plan-kestra-cleanup:
+    name: Plan Kestra preview cleanup
+    runs-on: ubuntu-latest
+
+    # Skip forks early. This job does not need cloud credentials.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+
+    outputs:
+      has_any_flows_to_deploy: ${{ steps.plan.outputs.has_any_flows_to_deploy }}
+      has_changed_kestra_flow_files: ${{ steps.plan.outputs.has_changed_kestra_flow_files }}
+      has_non_ml_flows_to_deploy: ${{ steps.plan.outputs.has_non_ml_flows_to_deploy }}
+      has_ml_flows_to_deploy: ${{ steps.plan.outputs.has_ml_flows_to_deploy }}
+      should_deploy_ml_flows: ${{ steps.plan.outputs.should_deploy_ml_flows }}
+      total_deployable_count: ${{ steps.plan.outputs.total_deployable_count }}
+      ml_skipped_count: ${{ steps.plan.outputs.ml_skipped_count }}
+
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Collect PR changed files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gh pr diff "${PR_NUMBER}" --name-only > /tmp/changed-files.txt
+
+          echo "Changed files:"
+          cat /tmp/changed-files.txt
+
+      - name: Compute Kestra cleanup plan
+        id: plan
+        shell: bash
+        env:
+          ENABLE_ML_KESTRA_DEPLOY: ${{ vars.ENABLE_ML_KESTRA_DEPLOY }}
+        run: |
+          set -euo pipefail
+
+          python scripts/kestra_deploy_plan.py \
+            --event-name pull_request \
+            --enable-ml-kestra-deploy "${ENABLE_ML_KESTRA_DEPLOY:-false}" \
+            --changed-files /tmp/changed-files.txt \
+            --flow-root kestra/flows-gke \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Print cleanup decision
+        shell: bash
+        run: |
+          echo "has_any_flows_to_deploy=${{ steps.plan.outputs.has_any_flows_to_deploy }}"
+          echo "total_deployable_count=${{ steps.plan.outputs.total_deployable_count }}"
+
+          if [ "${{ steps.plan.outputs.has_any_flows_to_deploy }}" != "true" ]; then
+            echo "No deployable Kestra flows detected for this PR. Skipping cloud cleanup."
+          fi
+
   cleanup-kestra-preview-flows:
     name: Delete Kestra PR preview flows
     runs-on: ubuntu-latest
+    needs: plan-kestra-cleanup
 
     # Never grant cloud credentials to fork PRs.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # Only clean up when the same deploy-plan logic says this PR had deployable Kestra flows.
+    if: >-
+      ${{
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        needs.plan-kestra-cleanup.outputs.has_any_flows_to_deploy == 'true'
+      }}
 
     permissions:
       contents: read
@@ -154,7 +222,7 @@ jobs:
             ${namespace}
             \`\`\`
 
-            The PR preview flow definitions were deleted from Kestra after the PR was closed or merged.
+            The PR preview flow definitions were deleted from Kestra after the PR was closed.
             `;
 
             const { owner, repo } = context.repo;
