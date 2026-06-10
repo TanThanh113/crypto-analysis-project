@@ -292,6 +292,239 @@ git diff --check
 
 ---
 
+## Runbook: Running Streaming and Batch Pipelines
+
+This section is a practical operator note for running the project in two modes. It is intentionally conservative: these commands can create cloud cost, write to BigQuery/GCS, start local Docker services, sync secrets, or open live orchestration UIs. Run them only when your GCP project, credentials, Terraform state, Kubernetes context, and secrets are intentionally configured.
+
+### Streaming Pipeline
+
+Streaming code lives in [local_scripts/streaming](local_scripts/streaming). The real local Makefile is [local_scripts/streaming/Makefile](local_scripts/streaming/Makefile); there is no top-level `Makefile` in this repo. The streaming Terraform/DataProc infrastructure is defined in [terraform/dataproc_cluster.tf](terraform/dataproc_cluster.tf), and the Grafana Terraform support lives in [terraform-grafana](terraform-grafana).
+
+1. Start or update the Dataproc/Flink infrastructure from the main Terraform module. This module contains the Dataproc cluster resource and can create cloud cost.
+
+```bash
+cd /home/thanh/crypto-analysis-project/terraform
+terraform plan
+terraform apply
+```
+
+2. Start the local streaming stack and deploy the Flink job. The `make up` target opens an ngrok TCP tunnel, writes a local `.env`, restarts Redpanda and Kafka Connect, configures BigQuery sink connectors, syncs code to the Dataproc cluster, and runs `local_scripts/streaming/scripts/deploy_flink.sh`.
+
+```bash
+cd /home/thanh/crypto-analysis-project/local_scripts/streaming
+make up
+```
+![TODO: Redpanda Console after make up](docs/images/Screenshot-ui-redpanda.png)
+
+![TODO: Terminal output after make up](docs/images/Screenshot-terminal-makeUp-1.png)
+![TODO: Terminal output after make up](docs/images/Screenshot-terminal-makeUp-2.png)
+![TODO: Terminal output after make up](docs/images/Screenshot-terminal-makeUp-3.png)
+
+Redpanda Console is mapped by `docker-compose.yaml` to `http://localhost:8080`. Kafka Connect is mapped to `http://localhost:8083`.
+
+3. Start the producer bots after the stack is healthy.
+
+```bash
+cd /home/thanh/crypto-analysis-project/local_scripts/streaming
+make start_bots
+```
+
+The Makefile includes these log viewers:
+
+```bash
+make log_binance
+make log_onchain
+make log_sentiment
+```
+
+![TODO: Producer logs](docs/images/Screenshot-log-trade.png)
+![TODO: Onchain logs](docs/images/Screenshot-log-onchain.png)
+![TODO: Sentiment logs](docs/images/Screenshot-log-sentiment.png)
+
+4. Check the cloud streaming job from Google Cloud. The Makefile and deploy script use Dataproc cluster `crypto-streaming-cluster` in zone `asia-southeast1-c`; confirm these values before running in another environment.
+
+Open Cloud Console, then go to Dataproc -> cluster -> VM or web interfaces -> YARN ResourceManager -> application Tracking URL. The Flink job is submitted with `flink run -m yarn-cluster`.
+
+![TODO: Dataproc cluster page](docs/images/streaming-dataproc-cluster.png)
+
+![TODO: YARN or Flink tracking URL](docs/images/Screenshot-dataproc-flink.png)
+
+5. Bring up Grafana support if you want the BigQuery dashboard path. The Terraform in `terraform-grafana` creates a BigQuery data source named `GCP-BigQuery-Crypto` and outputs `grafana_dashboard_url`.
+
+```bash
+cd /home/thanh/crypto-analysis-project/terraform-grafana
+terraform plan
+terraform apply
+```
+
+![TODO: Grafana datasource](docs/images/Screenshot-grafana-datasource.png)
+
+![TODO: Grafana dashboard](docs/images/Screenshot-grafana-dashboard.png)
+
+Do not commit Terraform state, `.tfvars`, service account keys, local `.env`, or generated connector credentials.
+
+### Batch / Kestra Pipeline
+
+Batch and orchestration flows live mainly under [local_scripts/batch](local_scripts/batch), [kestra/flows-gke](kestra/flows-gke), [helm/kestra](helm/kestra), and [k8s/kestra](k8s/kestra). Kestra-on-GKE infrastructure is in the main [terraform](terraform) module.
+
+1. Provision or update the required cloud infrastructure only when you intend to operate the environment.
+
+```bash
+cd /home/thanh/crypto-analysis-project/terraform
+terraform plan
+terraform apply
+```
+
+2. Add the required Kestra runtime secrets in Google Cloud Secret Manager. Do not put secret values in Git or screenshots.
+
+TODO: confirm the Secret Manager secret names for the target environment before running the sync command.
+
+3. Confirm local tooling and access:
+
+- `gcloud` authenticated to the intended project.
+- `kubectl` points to the intended GKE cluster.
+- Helm access is configured for the Kestra release.
+- The default namespace in the helper script is `kestra`; override `NAMESPACE` if your deployment differs.
+
+4. Sync Kestra runtime secrets into Kubernetes. The helper script exists at [scripts/sync_kestra_k8s_secrets.sh](scripts/sync_kestra_k8s_secrets.sh). Its defaults are `PROJECT_ID=project-lambda-crypto`, `NAMESPACE=kestra`, `K8S_SECRET_NAME=kestra-runtime-secret`, and `HELM_RELEASE=kestra`.
+
+```bash
+cd /home/thanh/crypto-analysis-project
+uv run scripts/sync_kestra_k8s_secrets.sh
+```
+
+![TODO: Kestra secret sync output](docs/images/Screenshot-terminal-kebectl.png)
+
+5. Check the Kestra pods in the actual namespace.
+
+```bash
+kubectl get pods -n kestra
+kubectl rollout status deployment/kestra-webserver -n kestra
+```
+
+6. Open the Kestra webserver locally. Existing docs and Helm values use the `kestra` namespace and `kestra-webserver` deployment.
+
+```bash
+kubectl port-forward deployment/kestra-webserver 8080:8080 -n kestra
+```
+
+Then open `http://localhost:8080`, log in with the configured credentials, and inspect flows, executions, logs, failed tasks, schedules, and namespaces.
+
+![TODO: Kestra UI](docs/images/Screenshot-kestra-flows.png)
+
+### Cleanup
+
+For the local streaming stack, stop producers and clean up local Docker/ngrok resources from the streaming folder:
+
+1. Stop the producer bots after completing the pipeline.
+```bash
+cd /home/thanh/crypto-analysis-project/local_scripts/streaming
+make stop_bots
+```
+2. Clean up the local streaming stack.
+```bash
+cd /home/thanh/crypto-analysis-project/local_scripts/streaming
+make down
+```
+
+![TODO: Make down output](docs/images/Screenshot-terminal-makeDown.png)
+
+TODO: document the approved cloud teardown policy for Dataproc, Grafana, GKE, Cloud SQL, and Kestra resources. Do not run `terraform destroy` casually.
+
+More detail:
+
+- [docs/streaming_pipeline.md](docs/streaming_pipeline.md)
+- [docs/kestra_orchestration.md](docs/kestra_orchestration.md)
+- [docs/k8s_gke_runtime.md](docs/k8s_gke_runtime.md)
+- [docs/terraform_infrastructure.md](docs/terraform_infrastructure.md)
+
+---
+
+## Looker Studio Dashboard
+
+Live demo:
+
+<https://datastudio.google.com/reporting/4df2ff41-4da8-479d-bf14-6ee4697aa0e7>
+
+This Looker Studio report is a demo dashboard for portfolio review. The live link can be used to quickly explore the dashboard while the original BigQuery tables, Looker Studio data sources, credentials, and cloud resources are still available.
+
+Important: this live report is not a permanent artifact. If the original BigQuery tables, Looker Studio data source, credentials, or cloud resources are deleted to reduce cost, the demo link may stop working or show missing data. For this reason, this repository keeps screenshots and optional exports as stable references. The reproducible source of truth is the dbt/BigQuery mart layer in [dbt_transform/crypto_dbt/models/marts/dashboard](dbt_transform/crypto_dbt/models/marts/dashboard) and [dbt_transform/crypto_dbt/models/marts/ml](dbt_transform/crypto_dbt/models/marts/ml).
+
+The Looker Studio layout is not stored in this repository as fully executable dashboard-as-code. To recreate the dashboard, rebuild the pipeline, build the dbt marts, make a copy of the Looker Studio report, and reconnect the data sources to your own BigQuery marts.
+
+
+![Looker Studio dashboard overview](docs/looker-studio/images/dashboard-Executive-Overview.png)
+
+![Market overview page](docs/looker-studio/images/dashboard-Market-Overview.png)
+
+![Derivatives and liquidation risk page](docs/looker-studio/images/dashboard-Derivatives-Risk.png)
+
+![Social liquidity macro ETF page](docs/looker-studio/images/dashboard-Social-Liquidity-Macro-ETF.png)
+
+![ML and pipeline monitoring page](docs/looker-studio/images/dashboard-Pipeline-MLOps-Overview.png)
+
+![Production monitoring page](docs/looker-studio/images/dashboard-Production-Monitoring.png)
+
+### How to Recreate the Dashboard
+
+1. Deploy required infrastructure only in an environment where cloud cost and credentials are intentionally configured.
+2. Run the required ingestion pipelines so the raw/intermediate BigQuery inputs exist.
+3. Build the dashboard and ML marts with dbt from `dbt_transform/crypto_dbt`.
+4. Open the Looker Studio live report.
+5. Use **Make a copy** in Looker Studio.
+6. Replace or reconnect every data source to your own BigQuery project/dataset.
+7. Point charts to your rebuilt dbt marts.
+8. Fix broken fields if your schema, dataset name, project name, or calculated fields differ from the original demo.
+
+Example dbt entrypoint:
+
+```bash
+# From the repository root
+cd dbt_transform/crypto_dbt
+uv run dbt build --select marts.dashboard marts.ml
+```
+
+Only run cloud-backed dbt builds when your BigQuery profile and target datasets are intentionally configured.
+
+### Expected BigQuery Marts
+
+The dashboard should be recreated from marts produced by dbt, not from one-off manual tables. Important real model names in this repo include:
+
+- `mart_dashboard_kpi_latest`
+- `mart_dashboard_market_overview_hourly`
+- `mart_dashboard_derivatives_risk_hourly`
+- `mart_dashboard_liquidation_heatmap_hourly`
+- `mart_dashboard_social_sentiment_hourly`
+- `mart_dashboard_liquidity_risk_daily`
+- `mart_dashboard_macro_etf_daily`
+- `mart_dashboard_options_risk_hourly`
+- `mart_dashboard_alerts_hourly`
+- `mart_dashboard_ai_signal_hourly`
+- `mart_dashboard_data_freshness`
+- `dim_dashboard_metric_catalog`
+- `mart_ml_prediction_input_latest`
+- `mart_ml_predictions_latest`
+- `mart_ml_model_metrics`
+- `mart_ml_feature_quality_daily`
+- `mart_ml_label_distribution_daily`
+
+TODO: before sharing a copied dashboard publicly, confirm the exact BigQuery dataset names and Looker Studio data source names in your active environment.
+
+### If the Live Dashboard Is Unavailable
+
+If the live Looker Studio report is broken, expired, or disconnected from the original data source, use these repo assets to understand and rebuild it:
+
+- saved screenshots in `docs/looker-studio/images/`
+- optional PDF export in `docs/looker-studio/` if present
+- dbt dashboard models in `dbt_transform/crypto_dbt/models/marts/dashboard/`
+- dbt ML/monitoring models in `dbt_transform/crypto_dbt/models/marts/ml/`
+- model schemas in `schema.yml`
+- README runbook instructions for ingestion, dbt, and cloud/runtime setup
+
+Do not expose secrets, service account keys, Looker credentials, private data, Terraform state, `.tfvars`, or local `.env` files when recreating or screenshotting the dashboard.
+
+---
+
 ## Portfolio Highlights
 
 - Built a cloud-native crypto analytics platform with ingestion, lakehouse storage, dbt marts, orchestration, ML, monitoring, and CI/CD.
